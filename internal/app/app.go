@@ -3,101 +3,89 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/imrtlDrifter/template/internal/handlers"
+	"github.com/imrtlDrifter/template/internal/repositories"
+	"github.com/imrtlDrifter/template/internal/service"
 	appconfig "github.com/imrtlDrifter/template/pkg/config"
 	"github.com/imrtlDrifter/template/pkg/database"
 	"github.com/imrtlDrifter/template/pkg/logger"
+	"github.com/imrtlDrifter/template/pkg/server"
 )
 
-func Run() {
-	rootCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+func Run(parentCtx context.Context) error {
+	rootCtx, stopSignals := signal.NotifyContext(parentCtx, syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
 
-	for rootCtx.Err() == nil {
-		cfg, setErr := appconfig.Load()
-		if setErr != nil {
-			log.Printf("load config: %v", setErr)
-			os.Exit(1)
-		}
-
-		logger.Init(cfg)
-		appCtx, cancelApp := context.WithCancel(rootCtx)
-
-		db, err := database.InitDB(appCtx, cfg)
-		if err != nil {
-			cancelApp()
-			logger.ErrorCtx(nil, err, "database_init_failed")
-			return
-		}
-
-		// Репозитории
-		// repos := repositories.NewRepository(db.RedisCluster, db.Postgres)
-
-		// Сервисы
-		// svc := service.NewService(repos, cfg)
-
-		// httpHandler := handlers.NewHandler(svc, cfg, db, buildCommit)
-		// srv := server.NewServer(cfg, httpHandler.Init(appCtx), configPath)
-
-		stopApp := func() {
-			cancelApp()
-			db.Close()
-		}
-
-		runErrCh := make(chan error, 1)
-		go func() {
-			if err := srv.Run(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				runErrCh <- err
-				return
-			}
-			runErrCh <- nil
-		}()
-
-		log.Println("🚀 Running on port http://localhost" + cfg.Server.Addr + "/")
-
-		needExit := false
-		serverFinished := false
-
-		for !needExit {
-			select {
-			case <-rootCtx.Done():
-				logger.InfoCtx(nil, "shutdown_signal_received")
-				needExit = true
-
-			case runErr := <-runErrCh:
-				serverFinished = true
-				needExit = true
-
-				if runErr != nil {
-					logger.ErrorCtx(nil, runErr, "server_error")
-				}
-			}
-
-			if !serverFinished {
-				shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
-
-				shutdownErr := srv.Stop(shutdownCtx)
-				cancelShutdown()
-
-				if shutdownErr != nil {
-					logger.WarnCtx(nil, shutdownErr, "server_shutdown_failed")
-					if closeErr := srv.Close(); closeErr != nil {
-						logger.WarnCtx(nil, closeErr, "server_force_close_failed")
-					}
-				}
-				<-runErrCh
-			}
-
-			stopApp()
-
-			if needExit {
-				return
-			}
-		}
+	cfg, err := appconfig.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
 	}
+
+	logger.Init(cfg)
+	appCtx, cancelApp := context.WithCancel(rootCtx)
+
+	db, err := database.InitDB(appCtx, cfg)
+	if err != nil {
+		cancelApp()
+		return fmt.Errorf("init database: %w", err)
+	}
+	defer func() {
+		cancelApp()
+		db.Close()
+	}()
+
+	repos := repositories.NewRepository(db.Postgres, cfg.PostgreSQL.QueryTimeout)
+
+	svc, err := service.NewService(repos, db.TxManager)
+	if err != nil {
+		return fmt.Errorf("init service: %w", err)
+	}
+
+	httpHandler := handlers.NewHandler(db, svc)
+	srv := server.NewServer(cfg, httpHandler.Init())
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- srv.Run()
+	}()
+
+	log.Println("🚀 Running on port http://localhost" + cfg.Server.Addr + "/")
+
+	select {
+	case runErr := <-runErrCh:
+		if runErr != nil && !errors.Is(runErr, http.ErrServerClosed) {
+			return fmt.Errorf("run HTTP server: %w", runErr)
+		}
+		return nil
+
+	case <-rootCtx.Done():
+		logger.InfoCtx(nil, "shutdown_signal_received")
+	}
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.WithoutCancel(rootCtx), cfg.Server.ShutdownTimeout)
+	defer cancelShutdown()
+
+	if err := srv.Stop(shutdownCtx); err != nil {
+		logger.WarnCtx(nil, err, "server_shutdown_failed")
+
+		if closeErr := srv.Close(); closeErr != nil {
+			logger.WarnCtx(nil, closeErr, "server_force_close_failed")
+		}
+
+		<-runErrCh
+		return fmt.Errorf("shutdown HTTP server: %w", err)
+	}
+
+	runErr := <-runErrCh
+	if runErr != nil && !errors.Is(runErr, http.ErrServerClosed) {
+		return fmt.Errorf("stop HTTP server: %w", runErr)
+	}
+
+	return nil
 }

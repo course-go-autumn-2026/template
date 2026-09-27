@@ -3,13 +3,11 @@ package utils
 import "strings"
 
 const (
-	APIBasePath   = "/api/v1"
+	APIBasePath   = "/api"
 	MetricsPath   = "/metrics"
-	SwaggerPath   = "/swagger/*any"
 	SwaggerPrefix = "/swagger/"
 	HealthPath    = "/health"
 	ReadyPath     = "/ready"
-	DocsPath      = "/docs/*any"
 )
 
 var InfraSkipPaths = []string{

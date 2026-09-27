@@ -12,6 +12,7 @@ import (
 
 type Database struct {
 	Postgres     *pgxpool.Pool
+	TxManager    *postgres.TransactionManager
 	queryTimeout time.Duration
 }
 
@@ -23,6 +24,7 @@ func InitDB(ctx context.Context, cfg *config.Configuration) (*Database, error) {
 
 	return &Database{
 		Postgres:     pool,
+		TxManager:    postgres.NewTransactionManager(pool, cfg.PostgreSQL.QueryTimeout),
 		queryTimeout: cfg.PostgreSQL.QueryTimeout,
 	}, nil
 }
@@ -43,6 +45,6 @@ func (d *Database) Close() {
 	if d == nil || d.Postgres == nil {
 		return
 	}
-	
+
 	d.Postgres.Close()
 }

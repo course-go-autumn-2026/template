@@ -12,16 +12,16 @@ build:
 	go build -o $(OUT_DIR)/$(BINARY_NAME) ./cmd/trip-service
 
 run:
-	set -a; source .env; set +a; go run ./cmd/trip-service
+	set -a; source .env.example; source .env; set +a; go run ./cmd/trip-service
 
 test:
 	go test -race ./...
 
 migrate:
-	set -a; source .env; set +a; go run ./cmd/migrator up
+	set -a; source .env.example; source .env; set +a; go run ./cmd/migrator up
 
 migrate-down:
-	set -a; source .env; set +a; go run ./cmd/migrator down
+	set -a; source .env.example; source .env; set +a; go run ./cmd/migrator down
 
 generate:
 	mkdir -p $(dir $(OPENAPI_OUTPUT))

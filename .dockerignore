@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.*
+.tripgo/
+
+out/
+bin/
+
+README.md
+contracts/
+**/*_test.go
+**/*.log
+
+Dockerfile*
+compose*.yaml
+compose*.yml
