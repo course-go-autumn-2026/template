@@ -1,8 +1,10 @@
 package v1
 
 import (
+	api "github.com/imrtlDrifter/template/internal/generated"
 	"github.com/imrtlDrifter/template/internal/service"
 	"github.com/imrtlDrifter/template/pkg/database"
+	httpres "github.com/imrtlDrifter/template/pkg/http_res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,6 +14,8 @@ type Handler struct {
 	services *service.Service
 }
 
+var _ api.ServerInterface = (*Handler)(nil)
+
 func NewHandler(db *database.Database, services *service.Service) *Handler {
 	return &Handler{
 		db:       db,
@@ -19,9 +23,10 @@ func NewHandler(db *database.Database, services *service.Service) *Handler {
 	}
 }
 
-func (h *Handler) Init(apiRouter *gin.RouterGroup) {
-	v1 := apiRouter.Group("/v1")
-	{
-		h.initTripRoutes(v1)
-	}
+func (h *Handler) Init(router gin.IRouter) {
+	api.RegisterHandlersWithOptions(router, h, api.GinServerOptions{
+		ErrorHandler: func(c *gin.Context, err error, statusCode int) {
+			httpres.NewError(c, statusCode, err)
+		},
+	})
 }

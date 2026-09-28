@@ -13,6 +13,7 @@ import (
 	"github.com/imrtlDrifter/template/internal/domainerrors"
 	"github.com/imrtlDrifter/template/internal/models"
 	"github.com/imrtlDrifter/template/internal/repositories"
+	"github.com/imrtlDrifter/template/pkg/utils"
 )
 
 type TripService struct {
@@ -27,31 +28,25 @@ func NewTripService(repos *repositories.Repository, txManager TransactionManager
 	}
 }
 
-func (s *TripService) Create(ctx context.Context, request *models.CreateTripRequest, idempotencyKey *uuid.UUID) (*models.Trip, bool, error) {
-	if err := request.Validate(); err != nil {
+func (s *TripService) Create(ctx context.Context, command *models.CreateTripCommand, idempotencyKey *uuid.UUID) (*models.Trip, bool, error) {
+	if err := utils.ValidateCreateTrip(command); err != nil {
 		return nil, false, err
 	}
 
 	trip := &models.Trip{
-		ID:       uuid.New(),
-		UserID:   request.UserID,
-		DriverID: request.DriverID,
-		StartPoint: models.Coordinates{
-			Latitude:  *request.StartPoint.Latitude,
-			Longitude: *request.StartPoint.Longitude,
-		},
-		EndPoint: models.Coordinates{
-			Latitude:  *request.EndPoint.Latitude,
-			Longitude: *request.EndPoint.Longitude,
-		},
-		Price:     *request.Price,
-		Status:    models.TripStatusActive,
-		StartedAt: time.Now().UTC(),
+		ID:         uuid.New(),
+		UserID:     command.UserID,
+		DriverID:   command.DriverID,
+		StartPoint: command.StartPoint,
+		EndPoint:   command.EndPoint,
+		Price:      command.Price,
+		Status:     models.TripStatusActive,
+		StartedAt:  time.Now().UTC(),
 	}
 
 	created := false
 
-	requestHash, err := createRequestHash(request)
+	requestHash, err := createRequestHash(command)
 	if err != nil {
 		return nil, false, err
 	}
@@ -176,8 +171,8 @@ func (s *TripService) Finish(ctx context.Context, id uuid.UUID) (*models.Trip, e
 	return trip, nil
 }
 
-func createRequestHash(request *models.CreateTripRequest) ([]byte, error) {
-	data, err := json.Marshal(request)
+func createRequestHash(command *models.CreateTripCommand) ([]byte, error) {
+	data, err := json.Marshal(command)
 	if err != nil {
 		return nil, fmt.Errorf("marshal create trip request: %w", err)
 	}

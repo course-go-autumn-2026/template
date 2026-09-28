@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
-	"github.com/google/uuid"
 	"github.com/imrtlDrifter/template/internal/domainerrors"
+	api "github.com/imrtlDrifter/template/internal/generated"
 	"github.com/imrtlDrifter/template/internal/models"
 	httpres "github.com/imrtlDrifter/template/pkg/http_res"
 	"github.com/imrtlDrifter/template/pkg/utils"
@@ -16,15 +15,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (h *Handler) initTripRoutes(router *gin.RouterGroup) {
-	router.POST("/trips", h.CreateTrip)
-	router.GET("/trips/:tripId", h.GetTrip)
-	router.POST("/trips/:tripId/finish", h.FinishTrip)
-}
-
-func (h *Handler) CreateTrip(c *gin.Context) {
-	var request models.CreateTripRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
+func (h *Handler) CreateTrip(c *gin.Context, params api.CreateTripParams) {
+	var request api.CreateTripJSONRequestBody
+	if err := c.ShouldBindBodyWithJSON(&request); err != nil {
 		if errors.Is(err, io.EOF) {
 			httpres.HandleDomainError(c, domainerrors.ErrEmptyRequestBody)
 			return
@@ -33,18 +26,13 @@ func (h *Handler) CreateTrip(c *gin.Context) {
 		return
 	}
 
-	var idempotencyKey *uuid.UUID
-	header := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-	if header != "" {
-		key, err := uuid.Parse(header)
-		if err != nil {
-			httpres.NewError(c, http.StatusBadRequest, err)
-			return
-		}
-		idempotencyKey = &key
+	body := c.MustGet(gin.BodyBytesKey).([]byte)
+	if err := utils.ValidateCreateTripRequiredFields(body); err != nil {
+		httpres.HandleDomainError(c, domainerrors.WrapValidationError(err))
+		return
 	}
 
-	trip, created, err := h.services.Trip.Create(c.Request.Context(), &request, idempotencyKey)
+	trip, created, err := h.services.Trip.Create(c.Request.Context(), models.CreateTrip(request), params.IdempotencyKey)
 	if err != nil {
 		httpres.HandleDomainError(c, domainerrors.WrapValidationError(err))
 		return
@@ -52,41 +40,29 @@ func (h *Handler) CreateTrip(c *gin.Context) {
 
 	if created {
 		c.Header("Location", fmt.Sprintf("%s/v1/trips/%s", utils.APIBasePath, trip.ID))
-		c.JSON(http.StatusCreated, trip)
+		c.JSON(http.StatusCreated, models.TripResponse(trip))
 		return
 	}
 
-	c.JSON(http.StatusOK, trip)
+	c.JSON(http.StatusOK, models.TripResponse(trip))
 }
 
-func (h *Handler) GetTrip(c *gin.Context) {
-	tripID, err := uuid.Parse(c.Param("tripId"))
-	if err != nil {
-		httpres.NewError(c, http.StatusBadRequest, err)
-		return
-	}
-
+func (h *Handler) GetTrip(c *gin.Context, tripID api.TripId) {
 	trip, err := h.services.Trip.GetByID(c.Request.Context(), tripID)
 	if err != nil {
 		httpres.HandleDomainError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, trip)
+	c.JSON(http.StatusOK, models.TripResponse(trip))
 }
 
-func (h *Handler) FinishTrip(c *gin.Context) {
-	tripID, err := uuid.Parse(c.Param("tripId"))
-	if err != nil {
-		httpres.NewError(c, http.StatusBadRequest, err)
-		return
-	}
-
+func (h *Handler) FinishTrip(c *gin.Context, tripID api.TripId) {
 	trip, err := h.services.Trip.Finish(c.Request.Context(), tripID)
 	if err != nil {
 		httpres.HandleDomainError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, trip)
+	c.JSON(http.StatusOK, models.TripResponse(trip))
 }

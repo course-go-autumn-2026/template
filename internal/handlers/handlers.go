@@ -5,7 +5,6 @@ import (
 	"github.com/imrtlDrifter/template/internal/service"
 	"github.com/imrtlDrifter/template/pkg/database"
 	"github.com/imrtlDrifter/template/pkg/logger"
-	"github.com/imrtlDrifter/template/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -41,10 +40,5 @@ func (h *Handler) Init() *gin.Engine {
 
 func (h *Handler) initAPI(router *gin.Engine) {
 	handlerV1 := handlerv1.NewHandler(h.db, h.services)
-
-	router.GET(utils.HealthPath, handlerV1.Health)
-	router.GET(utils.ReadyPath, handlerV1.Ready)
-
-	api := router.Group(utils.APIBasePath)
-	handlerV1.Init(api)
+	handlerV1.Init(router)
 }

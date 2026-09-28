@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/imrtlDrifter/template/internal/domainerrors"
+	api "github.com/imrtlDrifter/template/internal/generated"
 )
 
 type TripStatus string
@@ -19,17 +19,12 @@ type Coordinates struct {
 	Longitude float64 `json:"longitude"`
 }
 
-type RequestCoordinates struct {
-	Latitude  *float64 `json:"latitude"`
-	Longitude *float64 `json:"longitude"`
-}
-
-type CreateTripRequest struct {
-	UserID     uuid.UUID           `json:"user_id"`
-	DriverID   uuid.UUID           `json:"driver_id"`
-	StartPoint *RequestCoordinates `json:"start_point"`
-	EndPoint   *RequestCoordinates `json:"end_point"`
-	Price      *int64              `json:"price"`
+type CreateTripCommand struct {
+	UserID     uuid.UUID
+	DriverID   uuid.UUID
+	StartPoint Coordinates
+	EndPoint   Coordinates
+	Price      int64
 }
 
 type Trip struct {
@@ -54,79 +49,39 @@ type TripStatusHistory struct {
 	ChangedAt  time.Time   `json:"changed_at"`
 }
 
-func (r *CreateTripRequest) Validate() error {
-	switch {
-	case r.UserID == uuid.Nil:
-		return &domainerrors.ValidationError{
-			Field:   "user_id",
-			Message: "must be a non-empty UUID",
-		}
-	case r.DriverID == uuid.Nil:
-		return &domainerrors.ValidationError{
-			Field:   "driver_id",
-			Message: "must be a non-empty UUID",
-		}
-	case r.StartPoint == nil:
-		return &domainerrors.ValidationError{
-			Field:   "start_point",
-			Message: "is required",
-		}
-	case r.StartPoint.Latitude == nil:
-		return &domainerrors.ValidationError{
-			Field:   "start_point.latitude",
-			Message: "is required",
-		}
-	case *r.StartPoint.Latitude < -90 || *r.StartPoint.Latitude > 90:
-		return &domainerrors.ValidationError{
-			Field:   "start_point.latitude",
-			Message: "must be between -90 and 90",
-		}
-	case r.StartPoint.Longitude == nil:
-		return &domainerrors.ValidationError{
-			Field:   "start_point.longitude",
-			Message: "is required",
-		}
-	case *r.StartPoint.Longitude < -180 || *r.StartPoint.Longitude > 180:
-		return &domainerrors.ValidationError{
-			Field:   "start_point.longitude",
-			Message: "must be between -180 and 180",
-		}
-	case r.EndPoint == nil:
-		return &domainerrors.ValidationError{
-			Field:   "end_point",
-			Message: "is required",
-		}
-	case r.EndPoint.Latitude == nil:
-		return &domainerrors.ValidationError{
-			Field:   "end_point.latitude",
-			Message: "is required",
-		}
-	case *r.EndPoint.Latitude < -90 || *r.EndPoint.Latitude > 90:
-		return &domainerrors.ValidationError{
-			Field:   "end_point.latitude",
-			Message: "must be between -90 and 90",
-		}
-	case r.EndPoint.Longitude == nil:
-		return &domainerrors.ValidationError{
-			Field:   "end_point.longitude",
-			Message: "is required",
-		}
-	case *r.EndPoint.Longitude < -180 || *r.EndPoint.Longitude > 180:
-		return &domainerrors.ValidationError{
-			Field:   "end_point.longitude",
-			Message: "must be between -180 and 180",
-		}
-	case r.Price == nil:
-		return &domainerrors.ValidationError{
-			Field:   "price",
-			Message: "is required",
-		}
-	case *r.Price < 0:
-		return &domainerrors.ValidationError{
-			Field:   "price",
-			Message: "must be greater than or equal to 0",
-		}
-	default:
-		return nil
+func TripResponse(trip *Trip) api.Trip {
+	return api.Trip{
+		Id:       trip.ID,
+		UserId:   trip.UserID,
+		DriverId: trip.DriverID,
+		StartPoint: api.Coordinates{
+			Latitude:  trip.StartPoint.Latitude,
+			Longitude: trip.StartPoint.Longitude,
+		},
+		EndPoint: api.Coordinates{
+			Latitude:  trip.EndPoint.Latitude,
+			Longitude: trip.EndPoint.Longitude,
+		},
+		Price:          trip.Price,
+		Status:         api.TripStatus(trip.Status),
+		StartedAt:      trip.StartedAt,
+		FinishedAt:     trip.FinishedAt,
+		LastPositionAt: trip.LastPositionAt,
+	}
+}
+
+func CreateTrip(request api.CreateTripJSONRequestBody) *CreateTripCommand {
+	return &CreateTripCommand{
+		UserID:   request.UserId,
+		DriverID: request.DriverId,
+		StartPoint: Coordinates{
+			Latitude:  request.StartPoint.Latitude,
+			Longitude: request.StartPoint.Longitude,
+		},
+		EndPoint: Coordinates{
+			Latitude:  request.EndPoint.Latitude,
+			Longitude: request.EndPoint.Longitude,
+		},
+		Price: request.Price,
 	}
 }
