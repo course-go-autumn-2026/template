@@ -10,8 +10,8 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	appconfig "github.com/imrtlDrifter/template/internal/config"
 	"github.com/imrtlDrifter/template/migrations"
-	appconfig "github.com/imrtlDrifter/template/pkg/config"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

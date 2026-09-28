@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/imrtlDrifter/template/pkg/config"
+	"github.com/imrtlDrifter/template/internal/config"
 	"github.com/imrtlDrifter/template/pkg/utils"
 )
 

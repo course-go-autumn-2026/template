@@ -9,10 +9,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	appconfig "github.com/imrtlDrifter/template/internal/config"
 	"github.com/imrtlDrifter/template/internal/handlers"
 	"github.com/imrtlDrifter/template/internal/repositories"
 	"github.com/imrtlDrifter/template/internal/service"
-	appconfig "github.com/imrtlDrifter/template/pkg/config"
 	"github.com/imrtlDrifter/template/pkg/database"
 	"github.com/imrtlDrifter/template/pkg/logger"
 	"github.com/imrtlDrifter/template/pkg/server"

@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/imrtlDrifter/template/pkg/config"
-
+	"github.com/imrtlDrifter/template/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

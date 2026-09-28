@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/imrtlDrifter/template/pkg/config"
+	"github.com/imrtlDrifter/template/internal/config"
 	"github.com/imrtlDrifter/template/pkg/database/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

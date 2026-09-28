@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/imrtlDrifter/template/pkg/config"
+	"github.com/imrtlDrifter/template/internal/config"
 )
 
 type Server struct {
