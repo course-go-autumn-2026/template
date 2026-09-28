@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
-	"github.com/poiuyttq/tripgo/internal/config"
-	"github.com/poiuyttq/tripgo/internal/httpserver"
 	"log"
 	"net/http"
 	"os/signal"
 	"syscall"
+
+	"github.com/poiuyttq/tripgo/internal/config"
+	"github.com/poiuyttq/tripgo/internal/httpserver"
+	"github.com/poiuyttq/tripgo/internal/storage"
 )
 
 func main() {
@@ -20,9 +22,15 @@ func main() {
 	}
 	log.Printf("config loaded: %+v", cfg)
 
+	dbPool, err := storage.New(context.Background(), cfg)
+	if err != nil {
+		log.Fatalf("database init failed: %v", err)
+	}
+	defer dbPool.Close()
+
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpserver.NewRouter(),
+		Handler:           httpserver.NewRouter(dbPool),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
@@ -38,7 +46,6 @@ func main() {
 	}()
 
 	<-ctx.Done()
-
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()

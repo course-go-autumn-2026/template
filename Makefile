@@ -10,3 +10,9 @@ generate:
 	-package api \
 	-o internal/generated/api.gen.go \
 	contracts/openapi/trip-service.openapi.yaml
+#migration commands
+migrate:
+	go tool goose -dir migrations up
+
+migrate_down:
+	go tool goose -dir migrations down
