@@ -13,7 +13,6 @@ import (
 	"github.com/imrtlDrifter/template/internal/domainerrors"
 	"github.com/imrtlDrifter/template/internal/models"
 	"github.com/imrtlDrifter/template/internal/repositories"
-	"github.com/imrtlDrifter/template/pkg/utils"
 )
 
 type TripService struct {
@@ -29,7 +28,7 @@ func NewTripService(repos *repositories.Repository, txManager TransactionManager
 }
 
 func (s *TripService) Create(ctx context.Context, command *models.CreateTripCommand, idempotencyKey *uuid.UUID) (*models.Trip, bool, error) {
-	if err := utils.ValidateCreateTrip(command); err != nil {
+	if err := command.Validate(); err != nil {
 		return nil, false, err
 	}
 

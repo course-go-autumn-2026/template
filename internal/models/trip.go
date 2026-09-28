@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/imrtlDrifter/template/internal/domainerrors"
 	api "github.com/imrtlDrifter/template/internal/generated"
 )
 
@@ -47,6 +48,48 @@ type TripStatusHistory struct {
 	ToStatus   TripStatus  `json:"to_status"`
 	Reason     *string     `json:"reason,omitempty"`
 	ChangedAt  time.Time   `json:"changed_at"`
+}
+
+func (c *CreateTripCommand) Validate() error {
+	switch {
+	case c.UserID == uuid.Nil:
+		return &domainerrors.ValidationError{
+			Field:   "user_id",
+			Message: "must be a non-empty UUID",
+		}
+	case c.DriverID == uuid.Nil:
+		return &domainerrors.ValidationError{
+			Field:   "driver_id",
+			Message: "must be a non-empty UUID",
+		}
+	case c.StartPoint.Latitude < -90 || c.StartPoint.Latitude > 90:
+		return &domainerrors.ValidationError{
+			Field:   "start_point.latitude",
+			Message: "must be between -90 and 90",
+		}
+	case c.StartPoint.Longitude < -180 || c.StartPoint.Longitude > 180:
+		return &domainerrors.ValidationError{
+			Field:   "start_point.longitude",
+			Message: "must be between -180 and 180",
+		}
+	case c.EndPoint.Latitude < -90 || c.EndPoint.Latitude > 90:
+		return &domainerrors.ValidationError{
+			Field:   "end_point.latitude",
+			Message: "must be between -90 and 90",
+		}
+	case c.EndPoint.Longitude < -180 || c.EndPoint.Longitude > 180:
+		return &domainerrors.ValidationError{
+			Field:   "end_point.longitude",
+			Message: "must be between -180 and 180",
+		}
+	case c.Price < 0:
+		return &domainerrors.ValidationError{
+			Field:   "price",
+			Message: "must be greater than or equal to 0",
+		}
+	default:
+		return nil
+	}
 }
 
 func TripResponse(trip *Trip) api.Trip {

@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"github.com/google/uuid"
 	"github.com/imrtlDrifter/template/internal/domainerrors"
-	"github.com/imrtlDrifter/template/internal/models"
 )
 
 func ValidateCreateTripRequiredFields(body []byte) error {
@@ -56,46 +54,4 @@ func requireJSONField(fields map[string]json.RawMessage, name string, fieldPath 
 	}
 
 	return nil
-}
-
-func ValidateCreateTrip(c *models.CreateTripCommand) error {
-	switch {
-	case c.UserID == uuid.Nil:
-		return &domainerrors.ValidationError{
-			Field:   "user_id",
-			Message: "must be a non-empty UUID",
-		}
-	case c.DriverID == uuid.Nil:
-		return &domainerrors.ValidationError{
-			Field:   "driver_id",
-			Message: "must be a non-empty UUID",
-		}
-	case c.StartPoint.Latitude < -90 || c.StartPoint.Latitude > 90:
-		return &domainerrors.ValidationError{
-			Field:   "start_point.latitude",
-			Message: "must be between -90 and 90",
-		}
-	case c.StartPoint.Longitude < -180 || c.StartPoint.Longitude > 180:
-		return &domainerrors.ValidationError{
-			Field:   "start_point.longitude",
-			Message: "must be between -180 and 180",
-		}
-	case c.EndPoint.Latitude < -90 || c.EndPoint.Latitude > 90:
-		return &domainerrors.ValidationError{
-			Field:   "end_point.latitude",
-			Message: "must be between -90 and 90",
-		}
-	case c.EndPoint.Longitude < -180 || c.EndPoint.Longitude > 180:
-		return &domainerrors.ValidationError{
-			Field:   "end_point.longitude",
-			Message: "must be between -180 and 180",
-		}
-	case c.Price < 0:
-		return &domainerrors.ValidationError{
-			Field:   "price",
-			Message: "must be greater than or equal to 0",
-		}
-	default:
-		return nil
-	}
 }
