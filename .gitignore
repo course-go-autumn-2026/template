@@ -1,8 +1,12 @@
-# Локальные файлы окружения: создаются tripgoctl, у каждого свои
+# Environment & secrets
 .env
 .tripgo/
 
-# Сборка
+# Binaries & IDE
 bin/
+trip-service
+.idea/
+*.exe
 
+# OS
 .DS_Store
