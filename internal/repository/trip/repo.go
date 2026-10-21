@@ -1,4 +1,4 @@
-package repository
+package trip
 
 import (
 	"context"
@@ -12,9 +12,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/whxtelyy/template/internal/domain"
-	"github.com/whxtelyy/template/internal/tx"
+	domain "github.com/whxtelyy/template/internal/domain/trip"
+	"github.com/whxtelyy/template/internal/infra/postgres/transaction"
 )
+
+const idempotencyKeyColumn = "idempotency_key"
 
 type TripRepository struct {
 	pool         *pgxpool.Pool
@@ -29,7 +31,7 @@ func (r *TripRepository) Create(ctx context.Context, trip domain.Trip) (domain.T
 	ctx, cancel := context.WithTimeout(ctx, r.queryTimeout)
 	defer cancel()
 
-	executor := tx.ExecutorFromContext(ctx, r.pool)
+	executor := transaction.ExecutorFromContext(ctx, r.pool)
 	query, args, err := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar).
 		Insert("trips").
 		Columns("id", "user_id", "driver_id", "start_latitude", "start_longitude", "end_latitude", "end_longitude", "price", "status", "started_at").
@@ -57,11 +59,11 @@ func (r *TripRepository) Create(ctx context.Context, trip domain.Trip) (domain.T
 	return result, nil
 }
 
-func (r *TripRepository) AddStatusHistory(ctx context.Context, tripID uuid.UUID, fromStatus *string, toStatus string, reason string) error {
+func (r *TripRepository) AddStatusHistory(ctx context.Context, tripID uuid.UUID, fromStatus *string, toStatus, reason string) error {
 	ctx, cancel := context.WithTimeout(ctx, r.queryTimeout)
 	defer cancel()
 
-	executor := tx.ExecutorFromContext(ctx, r.pool)
+	executor := transaction.ExecutorFromContext(ctx, r.pool)
 	builder := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar).
 		Insert("trip_status_history").
 		Columns("trip_id", "from_status", "to_status", "reason").
@@ -76,11 +78,14 @@ func (r *TripRepository) AddStatusHistory(ctx context.Context, tripID uuid.UUID,
 	return nil
 }
 
+// Get returns the trip through a consumer-owned interface; the direct call below only checks its error.
+//
+//nolint:unparam // The result is used by the get and idempotency usecases through their interfaces.
 func (r *TripRepository) Get(ctx context.Context, id uuid.UUID) (domain.Trip, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.queryTimeout)
 	defer cancel()
 
-	executor := tx.ExecutorFromContext(ctx, r.pool)
+	executor := transaction.ExecutorFromContext(ctx, r.pool)
 	query, args, err := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar).
 		Select("id", "user_id", "driver_id", "start_latitude", "start_longitude", "end_latitude", "end_longitude", "price", "status", "started_at", "finished_at", "NULL::timestamptz AS last_position_at").
 		From("trips").
@@ -110,7 +115,7 @@ func (r *TripRepository) Finish(ctx context.Context, id uuid.UUID) (domain.Trip,
 	ctx, cancel := context.WithTimeout(ctx, r.queryTimeout)
 	defer cancel()
 
-	executor := tx.ExecutorFromContext(ctx, r.pool)
+	executor := transaction.ExecutorFromContext(ctx, r.pool)
 	query, args, err := squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar).
 		Update("trips").
 		Set("status", "completed").
@@ -155,12 +160,12 @@ func (r *TripRepository) ReserveIdempotencyKey(
 	ctx, cancel := context.WithTimeout(ctx, r.queryTimeout)
 	defer cancel()
 
-	executor := tx.ExecutorFromContext(ctx, r.pool)
+	executor := transaction.ExecutorFromContext(ctx, r.pool)
 
 	deleteQuery, deleteArgs, err := squirrel.StatementBuilder.
 		PlaceholderFormat(squirrel.Dollar).
 		Delete("trip_idempotency_keys").
-		Where(squirrel.Eq{"idempotency_key": key}).
+		Where(squirrel.Eq{idempotencyKeyColumn: key}).
 		Where(squirrel.Expr("expires_at <= now()")).
 		ToSql()
 	if err != nil {
@@ -174,7 +179,7 @@ func (r *TripRepository) ReserveIdempotencyKey(
 	insertQuery, insertArgs, err := squirrel.StatementBuilder.
 		PlaceholderFormat(squirrel.Dollar).
 		Insert("trip_idempotency_keys").
-		Columns("idempotency_key", "request_hash").
+		Columns(idempotencyKeyColumn, "request_hash").
 		Values(key, requestHash).
 		Suffix("ON CONFLICT (idempotency_key) DO NOTHING RETURNING request_hash").
 		ToSql()
@@ -200,7 +205,7 @@ func (r *TripRepository) ReserveIdempotencyKey(
 			"COALESCE(trip_id::text, '')",
 		).
 		From("trip_idempotency_keys").
-		Where(squirrel.Eq{"idempotency_key": key}).
+		Where(squirrel.Eq{idempotencyKeyColumn: key}).
 		ToSql()
 	if err != nil {
 		return domain.IdempotencyRecord{}, false, fmt.Errorf("build get idempotency key query: %w", err)
@@ -240,13 +245,13 @@ func (r *TripRepository) SetIdempotencyTrip(
 	ctx, cancel := context.WithTimeout(ctx, r.queryTimeout)
 	defer cancel()
 
-	executor := tx.ExecutorFromContext(ctx, r.pool)
+	executor := transaction.ExecutorFromContext(ctx, r.pool)
 
 	query, args, err := squirrel.StatementBuilder.
 		PlaceholderFormat(squirrel.Dollar).
 		Update("trip_idempotency_keys").
 		Set("trip_id", tripID).
-		Where(squirrel.Eq{"idempotency_key": key}).
+		Where(squirrel.Eq{idempotencyKeyColumn: key}).
 		Where(squirrel.Eq{"trip_id": nil}).
 		ToSql()
 	if err != nil {

@@ -1,373 +1,119 @@
 # Trip Service
 
-HTTP-сервис для управления поездками. Реализует создание поездки, получение поездки, завершение поездки, health-check и readiness-check.
+HTTP-сервис управления поездками на Go. Позволяет создавать, получать и завершать поездки. В ЛР2 существующий API из ЛР1 сохранён, а код разделён по слоям; добавлены тесты, линтер и наблюдаемость через OpenTelemetry.
 
-## Стек
+## Возможности
 
-* Go 1.24+
-* `net/http`
-* `chi`
-* PostgreSQL
-* `pgx` / `pgxpool`
-* Squirrel
-* Goose
-* oapi-codegen
-* `slog`
+| Метод | Маршрут | Назначение |
+| --- | --- | --- |
+| `POST` | `/api/v1/trips` | Создать поездку (`201`) |
+| `GET` | `/api/v1/trips/{tripId}` | Получить поездку (`200` или `404`) |
+| `POST` | `/api/v1/trips/{tripId}/finish` | Завершить поездку (`200` или `409`) |
+| `GET` | `/health` | Проверить работу HTTP-сервера |
+| `GET` | `/ready` | Проверить доступность PostgreSQL |
 
-## Запуск
+Создание поддерживает необязательный заголовок `Idempotency-Key` (UUID). Повтор с тем же ключом и телом возвращает ту же поездку (`200`), с другим телом - `409 idempotency_conflict`. Ключи хранятся 24 часа. Ошибки API представлены в формате RFC 9457 (`application/problem+json`).
 
-### 1. Запустить окружение
+**Стек:** Go 1.27, `net/http`, chi, PostgreSQL, pgx/pgxpool, Squirrel, Goose, oapi-codegen, OpenTelemetry, `slog`. Для тестов - `gomock` и `httptest`.
 
-Для локального окружения используется `tripgoctl`.
+## Быстрый запуск
+
+Команды выполняются из корня проекта **в Linux/WSL**. Нужны Go, Docker и `tripgoctl`.
 
 ```bash
+# PostgreSQL, OTel Collector, Jaeger, Prometheus и Grafana
 tripgoctl cluster start
 tripgoctl environment start
 tripgoctl connect
-```
 
-### 2. Переменные окружения
-
-`tripgoctl environment start` автоматически создаёт `.env` с адресами компонентов локального окружения.
-
-`.env.example` содержит список переменных и безопасные значения по умолчанию. Создавать `.env` вручную поверх файла, созданного `tripgoctl`, не нужно.
-
-Для ЛР1 используются:
-
-- `HTTP_ADDR`
-- `HTTP_READ_TIMEOUT`
-- `HTTP_READ_HEADER_TIMEOUT`
-- `HTTP_WRITE_TIMEOUT`
-- `HTTP_IDLE_TIMEOUT`
-- `LOG_LEVEL`
-- `SHUTDOWN_TIMEOUT`
-- `DATABASE_URL`
-- `DATABASE_MAX_CONNS`
-- `DATABASE_MIN_CONNS`
-- `DATABASE_MAX_CONN_LIFETIME`
-- `DATABASE_CONNECT_TIMEOUT`
-- `DATABASE_QUERY_TIMEOUT`
-
-### 3. Применить миграции
-
-```bash
+# Подготовка базы и запуск сервера
 make migrate
-```
-
-### 4. Запустить сервис
-
-```bash
 make run
 ```
 
-По умолчанию HTTP-сервер доступен на:
+HTTP API будет доступен на `http://localhost:8080`. `tripgoctl connect` показывает адрес базы и ссылки на интерфейсы наблюдаемости.
+
+**Настройка OTLP.** В `.env.example` указан стандартный `http://localhost:4318`, но локальный порт коллектора, выданный `tripgoctl connect`, может отличаться. Если в `.env` отсутствует `OTEL_EXPORTER_OTLP_ENDPOINT`, добавьте туда актуальный HTTP-адрес OTLP из вывода `connect`, например:
+
+```dotenv
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:22318
+```
+
+`make run` последовательно загружает `.env.example` и `.env`, поэтому локальное значение имеет приоритет. `.env` не коммитится; после пересоздания окружения адрес следует проверить заново.
+
+## Проверка и сборка
+
+```bash
+make generate           # OpenAPI-код и моки через go:generate
+make test               # unit/HTTP-тесты, race detector и coverage.out
+make test-integration   # интеграционные тесты с PostgreSQL
+make lint               # golangci-lint по .golangci.yml
+make build              # сборка исполняемого файла
+make docker-build       # многостадийный Docker-образ
+```
+
+Для `make test-integration` необходимы доступная PostgreSQL, применённые миграции и корректный `DATABASE_URL` в `.env`. Интеграционные тесты используют тег `integration`; основной набор тестов не требует запущенной базы. Скрипты Makefile используют POSIX shell.
+
+## Архитектура
 
 ```text
-http://localhost:8080
-```
-
-## Команды Makefile
-
-```bash
-make run
-```
-
-Запуск сервиса.
-
-```bash
-make migrate
-```
-
-Применение миграций PostgreSQL.
-
-```bash
-make generate
-```
-
-Генерация HTTP-кода из OpenAPI-контракта.
-
-```bash
-make test
-```
-
-Запуск тестов с race detector:
-
-```bash
-go test -race ./...
-```
-
-```bash
-make build
-```
-
-Сборка бинарного файла сервиса.
-
-## API
-
-### Health
-
-```http
-GET /health
-```
-
-Проверяет, что процесс сервиса работает.
-
-Health-check не обращается к базе данных и возвращает `200 OK`, пока HTTP-сервис запущен.
-
-### Ready
-
-```http
-GET /ready
-```
-
-Проверяет доступность PostgreSQL.
-
-При успешном подключении возвращается `200 OK`. При недоступности базы данных возвращается `503 Service Unavailable`.
-
-### Создание поездки
-
-```http
-POST /api/v1/trips
-```
-
-Создаёт новую активную поездку.
-
-При создании:
-
-* UUID поездки генерируется сервисом;
-* статус устанавливается в `active`;
-* `started_at` устанавливается на стороне PostgreSQL через `now()`;
-* поездка и запись в истории статусов создаются в одной транзакции.
-
-### Получение поездки
-
-```http
-GET /api/v1/trips/{tripId}
-```
-
-Возвращает поездку по UUID.
-
-Если поездка не существует, возвращается `404`.
-
-### Завершение поездки
-
-```http
-POST /api/v1/trips/{tripId}/finish
-```
-
-Переводит активную поездку в статус `completed`.
-
-При завершении:
-
-* `status` меняется с `active` на `completed`;
-* `finished_at` устанавливается PostgreSQL через `now()`;
-* повторное завершение возвращает `409`.
-
-### Идемпотентность создания поездки
-
-`POST /api/v1/trips` поддерживает заголовок `Idempotency-Key`.
-
-При первом запросе с новым ключом возвращается `201 Created`.
-
-Повторный запрос с тем же ключом и тем же телом возвращает `200 OK` и ту же поездку.
-
-Повторное использование ключа с другим телом возвращает `409 Conflict` с кодом `idempotency_conflict`.
-
-Без `Idempotency-Key` запрос работает обычным образом.
-
-Ключ хранится в PostgreSQL в течение 24 часов.
-
-## Ошибки
-
-Ошибки API возвращаются в формате `application/problem+json`.
-
-Используются коды:
-
-* `invalid_request` - некорректный запрос;
-* `trip_not_found` - поездка не найдена;
-* `trip_completed` - поездка уже завершена;
-* `driver_busy` - у водителя уже есть активная поездка;
-* `internal_error` - внутренняя ошибка сервера.
-* `idempotency_conflict` - тот же `Idempotency-Key` использован с другим телом запроса;
-
-## База данных
-
-Используются две таблицы:
-
-* `trips` - данные поездок;
-* `trip_status_history` - история изменения статусов.
-
-Миграции находятся в директории `migrations`.
-
-Для `trips` используются ограничения на:
-
-* диапазон координат;
-* неотрицательную стоимость;
-* допустимые статусы;
-* соответствие `status` и `finished_at`.
-
-Также создан индекс:
-
-```sql
-(status, started_at)
-```
-
-для выборок поездок по статусу и времени начала.
-
-## Решения
-
-### Уровень изоляции транзакций
-
-Используется `READ COMMITTED`.
-
-Этот уровень выбран как стандартный уровень изоляции PostgreSQL, достаточный для текущих операций сервиса.
-
-Конкурентное создание поездок у одного водителя защищается не уровнем изоляции, а частичным уникальным индексом:
-
-```sql
-CREATE UNIQUE INDEX trips_driver_active_uidx
-ON trips (driver_id)
-WHERE status = 'active';
-```
-
-Поэтому PostgreSQL гарантирует наличие не более одной активной поездки для одного водителя даже при конкурентных запросах.
-
-Конкурентное завершение поездки защищается условным обновлением:
-
-```sql
-UPDATE trips
-SET status = 'completed',
-    finished_at = now(),
-    updated_at = now()
-WHERE id = $1
-  AND status = 'active'
-```
-
-Только один конкурентный запрос может изменить поездку из `active` в `completed`. Остальные запросы после этого получают информацию о том, что поездка уже завершена.
-
-### Менеджер транзакций
-
-Транзакциями управляет `internal/tx/manager.go`.
-
-`TxManager.Do`:
-
-1. открывает транзакцию;
-2. помещает транзакцию в `context.Context`;
-3. выполняет переданную функцию;
-4. при успешном выполнении делает `COMMIT`;
-5. при ошибке выполняет `ROLLBACK`;
-6. при panic также выполняет `ROLLBACK` и передаёт panic дальше.
-
-Если `Do` вызывается внутри уже существующей транзакции, новая транзакция не создаётся - используется текущая транзакция из контекста.
-
-Репозитории получают executor из контекста и поэтому могут работать как с обычным connection pool, так и с текущей транзакцией.
-
-Для `COMMIT` и `ROLLBACK` используется контекст без отмены исходного запроса, чтобы завершение транзакции не было прервано отменой клиентского запроса.
-
-### Атомарность создания поездки
-
-Создание поездки и добавление записи в `trip_status_history` выполняются внутри одной транзакции.
-
-Если одна из операций завершается ошибкой, транзакция откатывается целиком.
-
-Таким образом, поездка не может остаться созданной без соответствующей записи в истории статусов.
-
-### Идемпотентность
-
-Для идемпотентности используется таблица `trip_idempotency_keys`.
-
-Ключ резервируется в начале той же транзакции, в которой создаётся поездка. Это позволяет корректно обрабатывать конкурентные запросы с одним ключом.
-
-Для каждого ключа сохраняется SHA-256 хэш тела запроса. При повторном запросе с тем же ключом хэш сравнивается с сохранённым:
-
-- одинаковый хэш - возвращается уже созданная поездка;
-- разный хэш - возвращается `idempotency_conflict`.
-
-Срок хранения ключа - 24 часа.
-
-## OpenAPI
-
-API реализуется по принципу API-first.
-
-Исходный контракт находится здесь:
-
-```text
-contracts/openapi/trip-service.openapi.yaml
-```
-
-Конфигурация генератора:
-
-```text
-config/oapi-codegen.yaml
-```
-
-Сгенерированный код находится здесь:
-
-```text
-internal/generated/api.gen.go
-```
-
-Для генерации используется:
-
-```bash
-make generate
-```
-
-Сгенерированный код вручную не изменяется.
-
-## Docker
-
-Сервис собирается многостадийной сборкой. В итоговый образ попадает только бинарный файл на базе `distroless`, контейнер запускается от пользователя `nonroot`.
-
-Сборка:
-
-```bash
-make docker-build
-```
-
-Запуск рядом с локальным PostgreSQL:
-
-```
-docker run --rm \
-  -p 8080:8080 \
-  --env-file .env.example \
-  -e DATABASE_URL='postgres://tripgo:tripgo@host.docker.internal:21032/tripgo?sslmode=disable' \
-  trip-service:lab1
-```
-Проверка:
-
-```
-  curl http://localhost:8080/ready
-```
-
-Размер итогового образа: 4.31 MiB.
-
-## Структура проекта
-
-```text
-cmd/trip-service/          # точка входа приложения
-config/                    # конфигурация генераторов и env
-contracts/                 # OpenAPI и схема API
+cmd/trip-service/                   точка входа, запуск и graceful shutdown
 internal/
-  config/                  # конфигурация приложения
-  domain/                  # доменные модели и ошибки
-  generated/               # сгенерированный OpenAPI-код
-  http/                    # HTTP handlers
-  repository/              # работа с PostgreSQL
-  service/                 # бизнес-логика
-  tx/                      # менеджер транзакций
-migrations/                # миграции PostgreSQL
-.env.example               # пример переменных окружения
-Makefile                   # команды проекта
+  container/                       сборка зависимостей (composition root)
+  domain/trip/                     модель поездки, правила и ошибки
+  usecase/trip/{create,get,finish}/ бизнес-сценарии и их интерфейсы
+  http/trip/{create,get,finish}/    HTTP-обработчики
+  http/domainerror/                преобразование ошибок в RFC 9457 Problem
+  http/middleware/                 Recover, Tracing, Logging, Metrics
+  repository/trip/                 реализация доступа к PostgreSQL
+  infra/postgres/transaction/      управление транзакциями
+  infra/postgres/                  трассировка SQL
+  infra/telemetry/                 OpenTelemetry и JSON-логи
+  generated/                       код из OpenAPI (не редактируется вручную)
+contracts/openapi/                 исходный контракт API
+migrations/                        схема базы данных
 ```
 
-## Graceful shutdown
+**Зависимости направлены внутрь.** Домен не зависит от HTTP, PostgreSQL и OTel. Usecase использует доменную модель и узкие интерфейсы из собственных `contract.go`; HTTP-обработчики также описывают свои зависимости на стороне потребителя. Конкретные реализации связываются в `internal/container`, без DI-фреймворка. Границы слоёв дополнительно контролирует `depguard`.
 
-Сервис обрабатывает `SIGINT` и `SIGTERM`.
+**Транзакции и конкурентность.** Менеджер в `internal/infra/postgres/transaction` выполняет `COMMIT` или `ROLLBACK`. Создание поездки и записи в истории статусов атомарно. Частичный уникальный индекс не позволяет водителю иметь более одной активной поездки; завершение выполняется условным `UPDATE`. Идемпотентность основана на резервировании ключа в транзакции и сравнении SHA-256 хэша тела запроса. Контракт OpenAPI и миграции в ЛР2 не изменялись.
 
-При получении сигнала:
+## Тестирование
 
-1. прекращается приём новых HTTP-запросов;
-2. сервер корректно завершается;
-3. используется `SHUTDOWN_TIMEOUT` как максимальное время graceful shutdown;
-4. после завершения закрывается connection pool PostgreSQL.
+- **Домен:** table-driven тесты правил и переходов статусов.
+- **Usecase:** unit-тесты с `gomock`; моки генерируются рядом с интерфейсами в `mocks_test.go`.
+- **HTTP:** `httptest`, проверка валидации, ошибок и middleware.
+- **Репозиторий:** интеграционные тесты на реальном PostgreSQL, включая откат транзакции, идемпотентность и конкурентное создание поездок.
+
+Целевой порог покрытия `internal/domain/...` и `internal/usecase/...` - не ниже 50%. Запуск тестов и линтера выполняется в Linux/WSL.
+
+## Логи, метрики и трейсы
+
+На каждый HTTP-запрос пишется структурированный JSON-лог через `slog`: метод, шаблон маршрута, статус, длительность, `trace_id` и `span_id`. Тела запросов и персональные идентификаторы не используются как метки метрик. Порядок middleware: **Recover → Tracing → Logging → Metrics → Router**.
+
+Трейсы HTTP и запросов PostgreSQL отправляются по OTLP в коллектор; для pgx используется `otelpgx`. Данные можно просматривать в **Jaeger**, а метрики - в **Prometheus/Grafana**. Адреса выводит `tripgoctl connect`. Недоступность коллектора не должна останавливать HTTP API.
+
+Основные метрики:
+
+| OpenTelemetry | В Prometheus |
+| --- | --- |
+| `http.server.request.duration` | `http_server_request_duration_seconds_*` |
+| `http.server.active_requests` | `http_server_active_requests` |
+| `db.client.operation.duration` | `db_client_operation_duration_seconds_*` |
+| `tripgo.trips.created` | `tripgo_trips_created_total` |
+| `tripgo.trips.completed` | `tripgo_trips_completed_total` |
+
+Для быстрой проверки отправьте `POST /api/v1/trips`, затем откройте в Jaeger трейс запроса и убедитесь, что в нём есть вложенные SQL-спаны. В Grafana → Explore → Prometheus проверьте:
+
+```promql
+http_server_request_duration_seconds_count
+tripgo_trips_created_total
+tripgo_trips_completed_total
+```
+
+Результаты ручной проверки: [трейсы Jaeger](docs/screenshots/Jaeger/) и [метрики Grafana](docs/screenshots/Grafana/).
+
+## Дополнительно
+
+- Docker-образ собирается в несколько стадий; итоговый контейнер основан на `distroless` и работает от `nonroot`.
+- При `SIGINT` или `SIGTERM` сервер завершает приём запросов, выполняет graceful shutdown и закрывает пул соединений PostgreSQL.

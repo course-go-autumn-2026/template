@@ -4,3 +4,4 @@
 /trip-service
 *.exe
 .vscode/
+/coverage.out
