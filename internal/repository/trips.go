@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/razrabbesezdav-art/template/internal/transaction"
 )
 
 var (
@@ -60,6 +61,14 @@ func NewTrips(db Querier) *Trips {
 	}
 }
 
+func (r *Trips) queryer(ctx context.Context) Querier {
+	if tx, ok := transaction.TxFromContext(ctx); ok {
+		return tx
+	}
+
+	return r.db
+}
+
 func (r *Trips) Create(ctx context.Context, data TripData) (Trip, error) {
 	id := uuid.New()
 	startedAt := time.Now().UTC()
@@ -99,7 +108,7 @@ func (r *Trips) Create(ctx context.Context, data TripData) (Trip, error) {
 		return Trip{}, fmt.Errorf("build create trip query: %w", err)
 	}
 
-	trip, err := scanTrip(r.db.QueryRow(ctx, query, args...))
+	trip, err := scanTrip(r.queryer(ctx).QueryRow(ctx, query, args...))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) &&
@@ -136,7 +145,7 @@ func (r *Trips) Get(ctx context.Context, id uuid.UUID) (Trip, error) {
 		return Trip{}, fmt.Errorf("build get trip query: %w", err)
 	}
 
-	trip, err := scanTrip(r.db.QueryRow(ctx, query, args...))
+	trip, err := scanTrip(r.queryer(ctx).QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Trip{}, ErrTripNotFound
 	}
@@ -164,7 +173,7 @@ func (r *Trips) Finish(ctx context.Context, id uuid.UUID) (Trip, error) {
 		return Trip{}, fmt.Errorf("build finish trip query: %w", err)
 	}
 
-	trip, err := scanTrip(r.db.QueryRow(ctx, query, args...))
+	trip, err := scanTrip(r.queryer(ctx).QueryRow(ctx, query, args...))
 	if err == nil {
 		return trip, nil
 	}

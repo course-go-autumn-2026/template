@@ -1,103 +1,108 @@
-﻿package main
+package main
 
 import (
-"context"
-"errors"
-"log"
-"net/http"
-"os"
-"os/signal"
-"syscall"
-"time"
+	"context"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5"
 
-"github.com/razrabbesezdav-art/template/internal/config"
-"github.com/razrabbesezdav-art/template/internal/database"
+	"github.com/razrabbesezdav-art/template/internal/config"
+	"github.com/razrabbesezdav-art/template/internal/database"
+	api "github.com/razrabbesezdav-art/template/internal/generated"
+	"github.com/razrabbesezdav-art/template/internal/handler"
+	"github.com/razrabbesezdav-art/template/internal/repository"
+	"github.com/razrabbesezdav-art/template/internal/service"
+	"github.com/razrabbesezdav-art/template/internal/transaction"
 )
 
 func main() {
-cfg, err := config.Load()
-if err != nil {
-log.Fatalf("load config: %v", err)
-}
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
 
-ctx, stop := signal.NotifyContext(
-context.Background(),
-os.Interrupt,
-syscall.SIGTERM,
-)
-defer stop()
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
 
-pool, err := database.NewPostgres(ctx, cfg)
-if err != nil {
-log.Fatalf("connect to PostgreSQL: %v", err)
-}
-defer pool.Close()
+	pool, err := database.NewPostgres(ctx, cfg)
+	if err != nil {
+		log.Fatalf("connect to PostgreSQL: %v", err)
+	}
+	defer pool.Close()
 
-router := chi.NewRouter()
+	// Initialize the transaction manager and repositories.
+	txManager := transaction.NewManager(
+		transaction.NewPGXBeginner(pool),
+	)
 
-router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusOK)
-_, _ = w.Write([]byte(`{"status":"ok"}`))
-})
+	tripsRepo := repository.NewTrips(pool)
+	historyRepo := repository.NewHistory(pool)
 
-router.Get("/ready", func(w http.ResponseWriter, r *http.Request) {
-pingCtx, cancel := context.WithTimeout(r.Context(), cfg.DatabaseQueryTimeout)
-defer cancel()
+	// Initialize the business service and HTTP handler.
+	tripService := service.NewTrips(
+		txManager,
+		tripsRepo,
+		historyRepo,
+	)
 
-if err := pool.Ping(pingCtx); err != nil {
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusServiceUnavailable)
-_, _ = w.Write([]byte(`{"status":"unavailable"}`))
-return
-}
+	tripHandler := handler.NewTrips(tripService, pool)
 
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusOK)
-_, _ = w.Write([]byte(`{"status":"ok"}`))
-})
+	// Register HTTP routes generated from the OpenAPI contract.
+	router := chi.NewRouter()
+	api.HandlerFromMux(tripHandler, router)
 
-server := &http.Server{
-Addr:              cfg.HTTPAddr,
-Handler:           router,
-ReadTimeout:       10 * time.Second,
-ReadHeaderTimeout: 5 * time.Second,
-WriteTimeout:      10 * time.Second,
-IdleTimeout:       60 * time.Second,
-}
+	server := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           router,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
-serverErr := make(chan error, 1)
-go func() {
-log.Printf("HTTP server listening on %s", cfg.HTTPAddr)
-serverErr <- server.ListenAndServe()
-}()
+	serverErr := make(chan error, 1)
 
-select {
-case err := <-serverErr:
-if !errors.Is(err, http.ErrServerClosed) {
-log.Fatalf("HTTP server: %v", err)
-}
-case <-ctx.Done():
-    log.Println("shutdown signal received")
+	go func() {
+		log.Printf("HTTP server listening on %s", cfg.HTTPAddr)
+		serverErr <- server.ListenAndServe()
+	}()
 
-    shutdownCtx, cancel := context.WithTimeout(
-        context.Background(),
-        cfg.ShutdownTimeout,
-    )
+	select {
+	case err := <-serverErr:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("HTTP server: %v", err)
+		}
 
-    if err := server.Shutdown(shutdownCtx); err != nil {
-        log.Printf("graceful shutdown failed: %v", err)
-        _ = server.Close()
-    }
+	case <-ctx.Done():
+		log.Println("shutdown signal received")
 
-    cancel()
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(),
+			cfg.ShutdownTimeout,
+		)
 
-    if err := <-serverErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
-        log.Printf("HTTP server shutdown: %v", err)
-    }
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("graceful shutdown failed: %v", err)
+			_ = server.Close()
+		}
 
-    log.Println("server stopped")
-}
+		cancel()
+
+		if err := <-serverErr; err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			log.Printf("HTTP server shutdown: %v", err)
+		}
+
+		log.Println("server stopped")
+	}
 }
