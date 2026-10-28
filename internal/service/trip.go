@@ -1,0 +1,126 @@
+package service
+
+import (
+	"context"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/Yolanesso/avito-labs/internal/model"
+	"github.com/Yolanesso/avito-labs/internal/repository"
+	"github.com/Yolanesso/avito-labs/internal/txmanager"
+)
+
+type CreateTripInput struct {
+	UserID   uuid.UUID
+	DriverID uuid.UUID
+
+	StartPoint model.Coordinates
+	EndPoint   model.Coordinates
+
+	Price int64
+}
+
+type TripService struct {
+	repository *repository.TripRepository
+	txManager  txmanager.TxManager
+}
+
+func NewTripService(
+	repository *repository.TripRepository,
+	txManager txmanager.TxManager,
+) *TripService {
+	return &TripService{
+		repository: repository,
+		txManager:  txManager,
+	}
+}
+
+func (s *TripService) Create(
+	ctx context.Context,
+	input CreateTripInput,
+) (model.Trip, error) {
+	now := time.Now().UTC()
+
+	trip := model.Trip{
+		ID:       uuid.New(),
+		UserID:   input.UserID,
+		DriverID: input.DriverID,
+
+		StartPoint: input.StartPoint,
+		EndPoint:   input.EndPoint,
+
+		Price:  input.Price,
+		Status: model.TripStatusActive,
+
+		StartedAt:  now,
+		FinishedAt: nil,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+
+	err := s.txManager.Do(
+		ctx,
+		func(ctx context.Context) error {
+			err := s.repository.Create(ctx, trip)
+			if err != nil {
+				return err
+			}
+
+			err = s.repository.AddCreatedHistory(ctx, trip.ID)
+			if err != nil {
+				return err
+			}
+
+			return nil
+		},
+	)
+	if err != nil {
+		return model.Trip{}, err
+	}
+
+	return trip, nil
+}
+
+func (s *TripService) GetByID(
+	ctx context.Context,
+	tripID uuid.UUID,
+) (model.Trip, error) {
+	return s.repository.GetByID(ctx, tripID)
+}
+
+func (s *TripService) Finish(
+	ctx context.Context,
+	tripID uuid.UUID,
+) (model.Trip, error) {
+	finishedAt := time.Now().UTC()
+
+	var trip model.Trip
+
+	err := s.txManager.Do(
+		ctx,
+		func(ctx context.Context) error {
+			err := s.repository.Finish(ctx, tripID, finishedAt)
+			if err != nil {
+				return err
+			}
+
+			err = s.repository.AddCompletedHistory(ctx, tripID)
+			if err != nil {
+				return err
+			}
+
+			trip, err = s.repository.GetByID(ctx, tripID)
+			if err != nil {
+				return err
+			}
+
+			return nil
+		},
+	)
+	if err != nil {
+		return model.Trip{}, err
+	}
+
+	return trip, nil
+}
