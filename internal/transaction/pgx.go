@@ -6,7 +6,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PGXBeginner адаптирует pgxpool.Pool к интерфейсу Beginner.
 type PGXBeginner struct {
 	pool *pgxpool.Pool
 }

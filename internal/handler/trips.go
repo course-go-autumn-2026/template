@@ -17,7 +17,6 @@ import (
 	"github.com/razrabbesezdav-art/template/internal/service"
 )
 
-// Trips implements the generated HTTP API.
 type Trips struct {
 	api.Unimplemented
 
@@ -53,7 +52,6 @@ func (h *Trips) CreateTrip(
 		return
 	}
 
-	// Accept exactly one JSON value and reject any trailing data.
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		writeProblem(

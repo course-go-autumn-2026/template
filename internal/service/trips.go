@@ -11,7 +11,6 @@ import (
 	"github.com/razrabbesezdav-art/template/internal/transaction"
 )
 
-// Trips выполняет бизнес-операции над поездками.
 type Trips struct {
 	txManager *transaction.Manager
 	trips     *repository.Trips
@@ -30,7 +29,6 @@ func NewTrips(
 	}
 }
 
-// Create создаёт поездку и записывает её начальный статус атомарно.
 func (s *Trips) Create(
 	ctx context.Context,
 	data repository.TripData,
@@ -55,7 +53,6 @@ func (s *Trips) Create(
 	return trip, nil
 }
 
-// Get возвращает поездку по идентификатору.
 func (s *Trips) Get(
 	ctx context.Context,
 	tripID uuid.UUID,
@@ -68,7 +65,6 @@ func (s *Trips) Get(
 	return trip, nil
 }
 
-// Finish завершает поездку и записывает изменение статуса атомарно.
 func (s *Trips) Finish(
 	ctx context.Context,
 	tripID uuid.UUID,
@@ -93,7 +89,6 @@ func (s *Trips) Finish(
 	return trip, nil
 }
 
-// IsConflict определяет ошибки бизнес-конфликтов.
 func IsConflict(err error) bool {
 	return errors.Is(err, repository.ErrDriverBusy) ||
 		errors.Is(err, repository.ErrTripCompleted)

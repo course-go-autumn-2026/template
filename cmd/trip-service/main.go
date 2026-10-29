@@ -40,7 +40,6 @@ func main() {
 	}
 	defer pool.Close()
 
-	// Initialize the transaction manager and repositories.
 	txManager := transaction.NewManager(
 		transaction.NewPGXBeginner(pool),
 	)
@@ -48,7 +47,6 @@ func main() {
 	tripsRepo := repository.NewTrips(pool)
 	historyRepo := repository.NewHistory(pool)
 
-	// Initialize the business service and HTTP handler.
 	tripService := service.NewTrips(
 		txManager,
 		tripsRepo,
@@ -57,7 +55,6 @@ func main() {
 
 	tripHandler := handler.NewTrips(tripService, pool)
 
-	// Register HTTP routes generated from the OpenAPI contract.
 	router := chi.NewRouter()
 	api.HandlerFromMux(tripHandler, router)
 
