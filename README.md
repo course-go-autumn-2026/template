@@ -1,44 +1,31 @@
-# TripGo — репозиторий для лабораторных работ
+# Trip Service
 
-Заготовка курса «Разработка микросервисов на Go». Здесь вы делаете все пять
-работ: каждая следующая продолжает предыдущую, переписывать сервис с нуля не
-нужно.
+HTTP API на Go: поездки, PostgreSQL, pgx, chi, squirrel.
 
-## Что делать сразу
+## Запуск
 
-1. **Fork** этого репозитория к себе. Форк нужен, чтобы преподаватели видели
-   список всех работ курса одной страницей.
-2. Заведите модуль:
+1. `tripgoctl cluster start && tripgoctl environment start && tripgoctl connect`
+2. `cp .env.example .env`, вписать `DATABASE_URL` из `connect`
+3. `make migrate`
+4. `make run`
 
-```bash
-git clone git@github.com:<ваш-логин>/<ваш-репозиторий>.git
-cd <ваш-репозиторий>
-go mod init github.com/<ваш-логин>/<ваш-репозиторий>
-```
+## Переменные окружения
 
-Путь модуля потом не меняется — иначе придётся править все импорты. Проще всего
-взять адрес своего репозитория, каким бы он ни был.
-
-Дальше — [`homework/docs/getting-started.md`](https://github.com/course-go-autumn-2026/course/blob/main/homework/docs/getting-started.md)
-в репозитории курса: инструменты, окружение, миграции, вид сданной работы.
-
-## Где что лежит
-
-| Что | Где |
+| Переменная | Назначение |
 |---|---|
-| Задания, документация, контракты | [`course-go-autumn-2026/course`](https://github.com/course-go-autumn-2026/course) |
-| Слайды и записи лекций | [`lections/`](https://github.com/course-go-autumn-2026/course/tree/main/lections) |
-| Как оценивают, дедлайны, порядок сдачи | [`homework/docs/grading.md`](https://github.com/course-go-autumn-2026/course/blob/main/homework/docs/grading.md) |
-| Локальное окружение и утилита `tripgoctl` | [`course-go-autumn-2026/course-infra`](https://github.com/course-go-autumn-2026/course-infra) |
+| HTTP_ADDR | адрес HTTP-сервера |
+| LOG_LEVEL | уровень логов |
+| SHUTDOWN_TIMEOUT | таймаут graceful shutdown |
+| DATABASE_URL | строка подключения к PostgreSQL |
+| DATABASE_MAX_CONNS | максимум соединений в пуле |
+| DATABASE_MIN_CONNS | минимум соединений в пуле |
+| DATABASE_MAX_CONN_LIFETIME | время жизни соединения |
+| DATABASE_CONNECT_TIMEOUT | таймаут подключения |
+| DATABASE_QUERY_TIMEOUT | таймаут запроса |
 
-Задания появляются по мере курса, каждое — после своей пары лекций.
+## Решения
 
-## Как сдавать
-
-Ветка `homework/NN` от `main`, pull request в `main` своего форка, ССЫЛКУ НИКУДА СКИДЫВАТЬ НЕ НУЖНО, ревьюер сам найдет ее внутри вашего форка. Подробно — в `grading.md` репозитория курса.
-
-## Чужие работы
-
-Форки видны всем, включая ваши. Смотреть чужие решения, пока идёт курс, —
-плохая идея: одинаковый код виден сразу, а разбираться на защите придётся
-самому.
+- **Уровень изоляции** — `ReadCommitted`. Для `create` и `finish` достаточно; уникальность активной поездки держит частичный уникальный индекс, а не уровень изоляции; `Serializable` дал бы лишние ретраи без выгоды.
+- **Менеджер транзакций** — `txmanager.Do` открывает `pgx.Tx`, кладёт в контекст, вызывает `fn`. Ошибка или паника → `ROLLBACK`. Вложенный `Do` переиспользует транзакцию из контекста. Репозиторий достаёт исполнителя через `FromContext` — вне `Do` работает через пул.
+- **Запрет двух активных поездок** — `CREATE UNIQUE INDEX trips_driver_active_uniq ON trips (driver_id) WHERE status = 'active'`. Ошибка `23505` превращается в `ErrDriverBusy` → `409 driver_busy`. Проверка `SELECT` перед `INSERT` не годится — гонка.
+- **Завершение** — условный `UPDATE ... WHERE status = 'active'`. Ноль строк → доп. чтение, чтобы отличить `404` от `409`. `finished_at` не перезаписывается.
