@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -10,12 +9,9 @@ import (
 )
 
 func (i *Implementation) Ready(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), i.queryTimeout)
-	defer cancel()
-
 	statusCode := http.StatusOK
 	response := api.HealthResponse{Status: api.Ok}
-	if err := i.pool.Ping(ctx); err != nil {
+	if err := i.checkupService.Check(r.Context()); err != nil {
 		log.Printf("check database readiness: %v", err)
 		statusCode = http.StatusServiceUnavailable
 		response.Status = api.Unavailable

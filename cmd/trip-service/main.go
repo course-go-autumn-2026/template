@@ -14,6 +14,7 @@ import (
 	historypg "github.com/makkssik/template/internal/domain/trip_status_history/repositories/pg"
 	tripspg "github.com/makkssik/template/internal/domain/trips/repositories/pg"
 	"github.com/makkssik/template/internal/postgres"
+	checkupservice "github.com/makkssik/template/internal/service/checkup"
 	historyservice "github.com/makkssik/template/internal/service/trip_status_history"
 	tripsservice "github.com/makkssik/template/internal/service/trips"
 )
@@ -41,10 +42,13 @@ func main() {
 		TxManager:               postgres.NewTxManager(pool, cfg.DatabaseQueryTimeout),
 	})
 
-	implementation := app.New(app.ImplementationConfig{
-		Pool:         pool,
+	checkupService := checkupservice.NewService(checkupservice.ServiceCfg{
+		Database:     pool,
 		QueryTimeout: cfg.DatabaseQueryTimeout,
-		TripsService: tripsService,
+	})
+	implementation := app.New(app.ImplementationConfig{
+		TripsService:   tripsService,
+		CheckupService: checkupService,
 	})
 	server := app.NewServer(cfg, implementation)
 	serverErrors := make(chan error, 1)

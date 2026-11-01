@@ -13,6 +13,7 @@ import (
 
 func (s *Service) FinishTrip(ctx context.Context, tripID uuid.UUID) (*domaintrips.Trip, error) {
 	var trip *domaintrips.Trip
+
 	err := s.txManager.Do(ctx, func(txCtx context.Context) error {
 		var err error
 		trip, err = s.tripsRepository.FinishTrip(txCtx, domaintrips.FinishTripDTO{
