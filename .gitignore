@@ -6,3 +6,6 @@
 bin/
 
 .DS_Store
+
+docs/
+AGENTS.md
