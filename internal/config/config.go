@@ -17,6 +17,11 @@ type Config struct {
 	DatabaseConnectTimeout  time.Duration
 	DatabaseQueryTimeout    time.Duration
 	DatabaseMaxConnLifetime time.Duration
+
+	HTTPReadTimeout  time.Duration
+	HTTPWriteTimeout time.Duration
+	HTTPIdleTimeout  time.Duration
+	ReadyTimeout     time.Duration
 }
 
 func Load() (Config, error) {
@@ -49,6 +54,19 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.DatabaseMaxConnLifetime, err = durationEnv("DATABASE_MAX_CONN_LIFETIME"); err != nil {
+		return Config{}, err
+	}
+
+	if cfg.HTTPReadTimeout, err = durationEnv("HTTP_READ_TIMEOUT"); err != nil {
+		return Config{}, err
+	}
+	if cfg.HTTPWriteTimeout, err = durationEnv("HTTP_WRITE_TIMEOUT"); err != nil {
+		return Config{}, err
+	}
+	if cfg.HTTPIdleTimeout, err = durationEnv("HTTP_IDLE_TIMEOUT"); err != nil {
+		return Config{}, err
+	}
+	if cfg.ReadyTimeout, err = durationEnv("READY_TIMEOUT"); err != nil {
 		return Config{}, err
 	}
 

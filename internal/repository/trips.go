@@ -50,14 +50,16 @@ type Querier interface {
 }
 
 type Trips struct {
-	db      Querier
-	builder sq.StatementBuilderType
+	db           Querier
+	builder      sq.StatementBuilderType
+	queryTimeout time.Duration
 }
 
-func NewTrips(db Querier) *Trips {
+func NewTrips(db Querier, queryTimeout time.Duration) *Trips {
 	return &Trips{
-		db:      db,
-		builder: sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+		db:           db,
+		builder:      sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+		queryTimeout: queryTimeout,
 	}
 }
 
@@ -65,11 +67,13 @@ func (r *Trips) queryer(ctx context.Context) Querier {
 	if tx, ok := transaction.TxFromContext(ctx); ok {
 		return tx
 	}
-
 	return r.db
 }
 
 func (r *Trips) Create(ctx context.Context, data TripData) (Trip, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.queryTimeout)
+	defer cancel()
+
 	id := uuid.New()
 	startedAt := time.Now().UTC()
 
@@ -116,7 +120,6 @@ func (r *Trips) Create(ctx context.Context, data TripData) (Trip, error) {
 			pgErr.ConstraintName == "trips_one_active_per_driver_idx" {
 			return Trip{}, ErrDriverBusy
 		}
-
 		return Trip{}, fmt.Errorf("create trip: %w", err)
 	}
 
@@ -124,6 +127,9 @@ func (r *Trips) Create(ctx context.Context, data TripData) (Trip, error) {
 }
 
 func (r *Trips) Get(ctx context.Context, id uuid.UUID) (Trip, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.queryTimeout)
+	defer cancel()
+
 	query, args, err := r.builder.
 		Select(
 			"id",
@@ -157,6 +163,9 @@ func (r *Trips) Get(ctx context.Context, id uuid.UUID) (Trip, error) {
 }
 
 func (r *Trips) Finish(ctx context.Context, id uuid.UUID) (Trip, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.queryTimeout)
+	defer cancel()
+
 	query, args, err := r.builder.
 		Update("trips").
 		Set("status", "completed").

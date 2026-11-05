@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -44,8 +43,8 @@ func main() {
 		transaction.NewPGXBeginner(pool),
 	)
 
-	tripsRepo := repository.NewTrips(pool)
-	historyRepo := repository.NewHistory(pool)
+	tripsRepo := repository.NewTrips(pool, cfg.DatabaseQueryTimeout)
+	historyRepo := repository.NewHistory(pool, cfg.DatabaseQueryTimeout)
 
 	tripService := service.NewTrips(
 		txManager,
@@ -53,18 +52,24 @@ func main() {
 		historyRepo,
 	)
 
-	tripHandler := handler.NewTrips(tripService, pool)
+	tripHandler := handler.NewTrips(tripService, pool, cfg.ReadyTimeout)
 
 	router := chi.NewRouter()
-	api.HandlerFromMux(tripHandler, router)
+
+	apiHandler := api.HandlerWithOptions(tripHandler, api.ChiServerOptions{
+		BaseRouter: router,
+		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			handler.WriteProblem(w, http.StatusBadRequest, "invalid_request", err.Error())
+		},
+	})
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           router,
-		ReadTimeout:       10 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		Handler:           apiHandler,
+		ReadTimeout:       cfg.HTTPReadTimeout,
+		ReadHeaderTimeout: cfg.HTTPReadTimeout,
+		WriteTimeout:      cfg.HTTPWriteTimeout,
+		IdleTimeout:       cfg.HTTPIdleTimeout,
 	}
 
 	serverErr := make(chan error, 1)

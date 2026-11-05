@@ -15,6 +15,10 @@ var testEnv = map[string]string{
 	"DATABASE_CONNECT_TIMEOUT":   "5s",
 	"DATABASE_QUERY_TIMEOUT":     "5s",
 	"DATABASE_MAX_CONN_LIFETIME": "1h",
+	"HTTP_READ_TIMEOUT":          "5s",
+	"HTTP_WRITE_TIMEOUT":         "10s",
+	"HTTP_IDLE_TIMEOUT":          "60s",
+	"READY_TIMEOUT":              "5s",
 }
 
 func setValidEnv(t *testing.T) {

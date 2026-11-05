@@ -20,14 +20,16 @@ import (
 type Trips struct {
 	api.Unimplemented
 
-	service *service.Trips
-	db      *pgxpool.Pool
+	service      *service.Trips
+	db           *pgxpool.Pool
+	readyTimeout time.Duration
 }
 
-func NewTrips(svc *service.Trips, db *pgxpool.Pool) *Trips {
+func NewTrips(svc *service.Trips, db *pgxpool.Pool, readyTimeout time.Duration) *Trips {
 	return &Trips{
-		service: svc,
-		db:      db,
+		service:      svc,
+		db:           db,
+		readyTimeout: readyTimeout,
 	}
 }
 
@@ -43,51 +45,27 @@ func (h *Trips) CreateTrip(
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&request); err != nil {
-		writeProblem(
-			w,
-			http.StatusBadRequest,
-			"invalid_request",
-			"Invalid request body",
-		)
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
 
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		writeProblem(
-			w,
-			http.StatusBadRequest,
-			"invalid_request",
-			"Request must contain one JSON object",
-		)
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Request must contain one JSON object")
 		return
 	}
 
 	if !validCoordinates(request.StartPoint) ||
 		!validCoordinates(request.EndPoint) ||
-		request.Price < 0 ||
-		request.UserId.String() == uuid.Nil.String() ||
-		request.DriverId.String() == uuid.Nil.String() {
-		writeProblem(
-			w,
-			http.StatusBadRequest,
-			"invalid_request",
-			"Invalid trip data",
-		)
+		request.Price <= 0 ||
+		request.UserId == uuid.Nil ||
+		request.DriverId == uuid.Nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid trip data")
 		return
 	}
 
-	userID, err := uuid.Parse(request.UserId.String())
-	if err != nil {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "Invalid user_id")
-		return
-	}
-
-	driverID, err := uuid.Parse(request.DriverId.String())
-	if err != nil {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "Invalid driver_id")
-		return
-	}
+	userID := uuid.UUID(request.UserId)
+	driverID := uuid.UUID(request.DriverId)
 
 	trip, err := h.service.Create(r.Context(), repository.TripData{
 		UserID:   userID,
@@ -100,25 +78,15 @@ func (h *Trips) CreateTrip(
 	})
 	if err != nil {
 		if errors.Is(err, repository.ErrDriverBusy) {
-			writeProblem(
-				w,
-				http.StatusConflict,
-				"driver_busy",
-				"Driver already has an active trip",
-			)
+			WriteProblem(w, http.StatusConflict, "driver_busy", "Driver already has an active trip")
 			return
 		}
-
-		writeProblem(
-			w,
-			http.StatusInternalServerError,
-			"internal_error",
-			"Could not create trip",
-		)
+		WriteProblem(w, http.StatusInternalServerError, "internal_error", "Could not create trip")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, toAPITrip(trip))
+	w.Header().Set("Location", "/api/v1/trips/"+trip.ID.String())
+	WriteJSON(w, http.StatusCreated, toAPITrip(trip))
 }
 
 func (h *Trips) GetTrip(
@@ -128,27 +96,21 @@ func (h *Trips) GetTrip(
 ) {
 	id, err := uuid.Parse(tripID.String())
 	if err != nil {
-		writeProblem(w, http.StatusBadRequest, "invalid_trip_id", "Invalid trip ID")
+		WriteProblem(w, http.StatusBadRequest, "invalid_trip_id", "Invalid trip ID")
 		return
 	}
 
 	trip, err := h.service.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, repository.ErrTripNotFound) {
-			writeProblem(w, http.StatusNotFound, "trip_not_found", "Trip not found")
+			WriteProblem(w, http.StatusNotFound, "trip_not_found", "Trip not found")
 			return
 		}
-
-		writeProblem(
-			w,
-			http.StatusInternalServerError,
-			"internal_error",
-			"Could not get trip",
-		)
+		WriteProblem(w, http.StatusInternalServerError, "internal_error", "Could not get trip")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toAPITrip(trip))
+	WriteJSON(w, http.StatusOK, toAPITrip(trip))
 }
 
 func (h *Trips) FinishTrip(
@@ -158,7 +120,7 @@ func (h *Trips) FinishTrip(
 ) {
 	id, err := uuid.Parse(tripID.String())
 	if err != nil {
-		writeProblem(w, http.StatusBadRequest, "invalid_trip_id", "Invalid trip ID")
+		WriteProblem(w, http.StatusBadRequest, "invalid_trip_id", "Invalid trip ID")
 		return
 	}
 
@@ -166,44 +128,36 @@ func (h *Trips) FinishTrip(
 	if err != nil {
 		switch {
 		case errors.Is(err, repository.ErrTripNotFound):
-			writeProblem(w, http.StatusNotFound, "trip_not_found", "Trip not found")
+			WriteProblem(w, http.StatusNotFound, "trip_not_found", "Trip not found")
 		case errors.Is(err, repository.ErrTripCompleted):
-			writeProblem(w, http.StatusConflict, "trip_completed", "Trip is already completed")
+			WriteProblem(w, http.StatusConflict, "trip_completed", "Trip is already completed")
 		default:
-			writeProblem(
-				w,
-				http.StatusInternalServerError,
-				"internal_error",
-				"Could not finish trip",
-			)
+			WriteProblem(w, http.StatusInternalServerError, "internal_error", "Could not finish trip")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toAPITrip(trip))
+	WriteJSON(w, http.StatusOK, toAPITrip(trip))
 }
 
 func (h *Trips) Health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, api.HealthResponse{
+	WriteJSON(w, http.StatusOK, api.HealthResponse{
 		Status: api.HealthResponseStatus("ok"),
 	})
 }
 
 func (h *Trips) Ready(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), h.readyTimeout)
 	defer cancel()
 
 	if err := h.db.Ping(ctx); err != nil {
-		writeProblem(
-			w,
-			http.StatusServiceUnavailable,
-			"database_unavailable",
-			"Database is unavailable",
-		)
+		WriteJSON(w, http.StatusServiceUnavailable, api.HealthResponse{
+			Status: api.HealthResponseStatus("unavailable"),
+		})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, api.HealthResponse{
+	WriteJSON(w, http.StatusOK, api.HealthResponse{
 		Status: api.HealthResponseStatus("ok"),
 	})
 }
@@ -242,7 +196,7 @@ func toAPITrip(trip repository.Trip) api.Trip {
 	return result
 }
 
-func writeProblem(w http.ResponseWriter, status int, code, title string) {
+func WriteProblem(w http.ResponseWriter, status int, code, title string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 
@@ -254,7 +208,7 @@ func writeProblem(w http.ResponseWriter, status int, code, title string) {
 	})
 }
 
-func writeJSON(w http.ResponseWriter, status int, value any) {
+func WriteJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
