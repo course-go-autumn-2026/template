@@ -1,8 +1,9 @@
-package repository
+package transaction
 
 import (
 	"context"
 	"fmt"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -31,7 +32,10 @@ func (m *pgxTxManager) Do(ctx context.Context, fn func(ctx context.Context) erro
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	txCtx := context.WithValue(ctx, txKey{}, tx)
 

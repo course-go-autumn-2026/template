@@ -1,16 +1,32 @@
-# Сервис поездок (Лабораторная работа 1)
+# Сервис поездок (Trip Service)
 
-## Запуск
-1. Поднимите окружение: `tripgoctl cluster start && tripgoctl environment start && tripgoctl connect`
-2. Примените миграции: `make migrate`
-3. Запустите сервер: `make run`
+Реализация лабораторных работ курса «Разработка микросервисов на Go».
 
-## Решения
-**Менеджер транзакций:**
-Реализован паттерн Unit of Work через `TxManager.Do`. Транзакция открывается в `pgxpool`, кладется в `context` под приватным ключом и передается в бизнес-логику. Репозитории достают транзакцию из контекста с помощью функции `GetExecutor`. Если репозиторий вызывается вне транзакции, он берет соединение напрямую из пула. Вложенные вызовы `Do` переиспользуют уже открытую транзакцию.
+## 🚀 Запуск
 
-**Уровень изоляции:**
-Используется уровень изоляции по умолчанию (Read Committed). Для данной задачи этого достаточно, так как защита от конкурентных изменений обеспечивается на уровне блокировок базы данных (уникальные индексы и условные UPDATE).
-
-**Запрет двух активных поездок:**
-В миграции создан частичный уникальный индекс: `CREATE UNIQUE INDEX idx_active_driver ON trips (driver_id) WHERE status = 'active';`. При конкурентном создании поездок база данных блокирует вставку дубликата и возвращает ошибку `23505`, которая обрабатывается в репозитории и превращается в доменную ошибку `ErrDriverBusy` (HTTP 409). Завершение поездки защищено условным `UPDATE ... WHERE status = 'active'`, что исключает возможность перезаписи `finished_at`.
+1. Поднимите окружение (PostgreSQL, Jaeger, Grafana, OTel Collector):
+   ```bash
+   tripgoctl cluster start
+   tripgoctl environment start
+   tripgoctl connect
+2. Примените миграции к базе данных (используйте порт из вывода tripgoctl connect или файла .env):
+    psql "postgres://tripgo:tripgo@localhost:22032/tripgo?sslmode=disable" -f migrations/00001_init.sql
+3. Запустите сервер:
+    make run
+4. Тесты и линтер:
+    make lint — запуск линтера (golangci-lint).
+    make test — запуск unit-тестов с флагом -race и подсчетом покрытия.
+    make test-integration — запуск интеграционных тестов с реальной БД.
+5. Архитектура:
+    Проект построен по принципам чистой архитектуры. Зависимости направлены строго внутрь: транспорт и репозитории знают про usecase, usecase знает про домен, а домен не знает ни про кого.
+    internal/domain/trip — доменные правила (например, FinishTrip). Не знает ни про HTTP, ни про базу данных.
+    internal/model — структуры данных (DTO), которые ходят между слоями.
+    internal/usecase/trip/... — бизнес-логика (create, get, finish). Знает только про интерфейсы репозиториев, объявленные в contract.go.
+    internal/http/... — транспортный слой (хендлеры). Знает про usecase и маппит доменные ошибки в HTTP-коды (domainerror).
+    internal/repository/trip — реализация репозитория (pgx + squirrel).
+    internal/infra — инфраструктура (транзакции, телеметрия).
+    internal/container — единая точка сборки зависимостей (ручной DI).
+6. Observability:
+    Логи: slog в формате JSON с полями trace_id и span_id.
+    Трейсы: OpenTelemetry с экспортом по HTTP (OTLP).
+    Метрики: tripgo.trips.created и tripgo.trips.completed (экспортируются в Prometheus и доступны в Grafana).

@@ -1,4 +1,4 @@
-package repository
+package trip
 
 import (
 	"context"
@@ -7,23 +7,35 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/ggwpfu9/courseAvito/internal/domain"
+	tripDomain "github.com/ggwpfu9/courseAvito/internal/domain/trip"
+	appmodel "github.com/ggwpfu9/courseAvito/internal/model" 
 )
 
-type TripRepo struct {
+type Repo struct {
 	pool *pgxpool.Pool
 }
 
-func NewTripRepo(pool *pgxpool.Pool) *TripRepo {
-	return &TripRepo{pool: pool}
+func NewRepo(pool *pgxpool.Pool) *Repo {
+	return &Repo{pool: pool}
 }
 
-func (r *TripRepo) Create(ctx context.Context, trip *domain.Trip) error {
+func GetExecutor(ctx context.Context, pool *pgxpool.Pool) interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+} {
+	type txKey struct{}
+	if tx, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
+		return tx
+	}
+	return pool
+}
+
+func (r *Repo) Save(ctx context.Context, trip appmodel.Trip) error {
 	exec := GetExecutor(ctx, r.pool)
 
 	query, args, err := sq.Insert("trips").
@@ -39,19 +51,16 @@ func (r *TripRepo) Create(ctx context.Context, trip *domain.Trip) error {
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return domain.ErrDriverBusy
+			return tripDomain.ErrDriverBusy
 		}
 		return fmt.Errorf("insert trip: %w", err)
 	}
 
-	historyQuery, historyArgs, err := sq.Insert("trip_status_history").
+	historyQuery, historyArgs, _ := sq.Insert("trip_status_history").
 		Columns("trip_id", "status", "changed_at").
 		Values(trip.ID, trip.Status, time.Now()).
 		PlaceholderFormat(sq.Dollar).
 		ToSql()
-	if err != nil {
-		return err
-	}
 
 	_, err = exec.Exec(ctx, historyQuery, historyArgs...)
 	if err != nil {
@@ -61,24 +70,24 @@ func (r *TripRepo) Create(ctx context.Context, trip *domain.Trip) error {
 	return nil
 }
 
-func (r *TripRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Trip, error) {
+func (r *Repo) GetByID(ctx context.Context, id string) (*appmodel.Trip, error) {
 	exec := GetExecutor(ctx, r.pool)
 
-	query, args, _ := sq.Select("id", "user_id", "driver_id", "start_lat", "start_lon", "end_lat", "end_lon", "price", "status", "started_at", "finished_at", "last_position_at").
+	query, args, _ := sq.Select("id", "user_id", "driver_id", "start_lat", "start_lon", "end_lat", "end_lon", "price", "status", "started_at", "finished_at").
 		From("trips").
 		Where(sq.Eq{"id": id}).
 		PlaceholderFormat(sq.Dollar).
 		ToSql()
 
-	var t domain.Trip
+	var t appmodel.Trip
 	err := exec.QueryRow(ctx, query, args...).Scan(
 		&t.ID, &t.UserID, &t.DriverID, &t.StartPoint.Latitude, &t.StartPoint.Longitude, &t.EndPoint.Latitude, &t.EndPoint.Longitude,
-		&t.Price, &t.Status, &t.StartedAt, &t.FinishedAt, &t.LastPositionAt,
+		&t.Price, &t.Status, &t.StartedAt, &t.FinishedAt,
 	)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, domain.ErrTripNotFound
+			return nil, tripDomain.ErrTripNotFound
 		}
 		return nil, fmt.Errorf("get trip: %w", err)
 	}
@@ -86,34 +95,15 @@ func (r *TripRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Trip, err
 	return &t, nil
 }
 
-func (r *TripRepo) Finish(ctx context.Context, id uuid.UUID) error {
+func (r *Repo) Update(ctx context.Context, trip appmodel.Trip) error {
 	exec := GetExecutor(ctx, r.pool)
-
-	query, args, err := sq.Update("trips").
-		Set("status", "completed").
-		Set("finished_at", time.Now()).
-		Where(sq.Eq{"id": id, "status": "active"}).
+	query, args, _ := sq.Update("trips").
+		Set("status", trip.Status).
+		Set("finished_at", trip.FinishedAt).
+		Where(sq.Eq{"id": trip.ID}).
 		PlaceholderFormat(sq.Dollar).
 		ToSql()
-	if err != nil {
-		return err
-	}
 
-	res, err := exec.Exec(ctx, query, args...)
-	if err != nil {
-		return fmt.Errorf("finish trip: %w", err)
-	}
-
-	if res.RowsAffected() == 0 {
-		trip, err := r.GetByID(ctx, id)
-		if err != nil {
-			return err
-		}
-		if trip.Status == "completed" {
-			return domain.ErrTripCompleted
-		}
-		return domain.ErrTripNotFound
-	}
-
-	return nil
+	_, err := exec.Exec(ctx, query, args...)
+	return err
 }
