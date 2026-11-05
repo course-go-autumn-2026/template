@@ -83,7 +83,11 @@ func Setup(ctx context.Context, cfg *config.Config) (*Telemetry, error) {
 
 	traceExporterOpts := []otlptracehttp.Option{}
 	if cfg.OtelExporterOTLPEndpoint != "" {
-		traceExporterOpts = append(traceExporterOpts, otlptracehttp.WithEndpointURL(cfg.OtelExporterOTLPEndpoint))
+		traceURL := strings.TrimRight(cfg.OtelExporterOTLPEndpoint, "/")
+		if !strings.HasSuffix(traceURL, "/v1/traces") {
+			traceURL += "/v1/traces"
+		}
+		traceExporterOpts = append(traceExporterOpts, otlptracehttp.WithEndpointURL(traceURL))
 	}
 	traceExporter, err := otlptracehttp.New(ctx, traceExporterOpts...)
 	if err != nil {
@@ -103,7 +107,11 @@ func Setup(ctx context.Context, cfg *config.Config) (*Telemetry, error) {
 
 	metricExporterOpts := []otlpmetrichttp.Option{}
 	if cfg.OtelExporterOTLPEndpoint != "" {
-		metricExporterOpts = append(metricExporterOpts, otlpmetrichttp.WithEndpointURL(cfg.OtelExporterOTLPEndpoint))
+		metricURL := strings.TrimRight(cfg.OtelExporterOTLPEndpoint, "/")
+		if !strings.HasSuffix(metricURL, "/v1/metrics") {
+			metricURL += "/v1/metrics"
+		}
+		metricExporterOpts = append(metricExporterOpts, otlpmetrichttp.WithEndpointURL(metricURL))
 	}
 	metricExporter, err := otlpmetrichttp.New(ctx, metricExporterOpts...)
 	if err != nil {
