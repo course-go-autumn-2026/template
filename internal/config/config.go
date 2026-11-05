@@ -17,10 +17,10 @@ type Config struct {
 	DatabaseConnectTimeout time.Duration
 	DatabaseQueryTimeout   time.Duration
 	DatabaseMaxConnLife    time.Duration
+	OtelEndpoint           string
 }
 
 func Load() (*Config, error) {
-	httpAddr := getEnv("HTTP_ADDR", ":8080")
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
@@ -57,7 +57,7 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		HTTPAddr:               httpAddr,
+		HTTPAddr:               getEnv("HTTP_ADDR", ":8080"),
 		DatabaseURL:            dbURL,
 		LogLevel:               getEnv("LOG_LEVEL", "info"),
 		ShutdownTimeout:        shutdownTimeout,
@@ -66,36 +66,33 @@ func Load() (*Config, error) {
 		DatabaseConnectTimeout: connTimeout,
 		DatabaseQueryTimeout:   queryTimeout,
 		DatabaseMaxConnLife:    maxConnLife,
+		OtelEndpoint:           getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4318"),
 	}, nil
 }
 
-func getEnv(key, defaultVal string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
+func getEnv(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
 	}
-	return defaultVal
+	return def
 }
 
-func parseInt32Env(key string, defaultVal int32) (int32, error) {
-	val := os.Getenv(key)
-	if val == "" {
-		return defaultVal, nil
+func parseInt32Env(k string, def int32) (int32, error) {
+	v := os.Getenv(k)
+	if v == "" {
+		return def, nil
 	}
-	parsed, err := strconv.ParseInt(val, 10, 32)
+	n, err := strconv.ParseInt(v, 10, 32)
 	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %w", key, err)
+		return 0, err
 	}
-	return int32(parsed), nil
+	return int32(n), nil
 }
 
-func parseDurationEnv(key string, defaultVal time.Duration) (time.Duration, error) {
-	val := os.Getenv(key)
-	if val == "" {
-		return defaultVal, nil
+func parseDurationEnv(k string, def time.Duration) (time.Duration, error) {
+	v := os.Getenv(k)
+	if v == "" {
+		return def, nil
 	}
-	d, err := time.ParseDuration(val)
-	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %w", key, err)
-	}
-	return d, nil
+	return time.ParseDuration(v)
 }
