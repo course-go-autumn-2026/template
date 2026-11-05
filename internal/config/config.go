@@ -10,18 +10,22 @@ import (
 )
 
 type Config struct {
-	// HTTP
 	HTTPAddr        string
 	LogLevel        string
 	ShutdownTimeout time.Duration
 
-	// Database
 	DatabaseURL             string
 	DatabaseMaxConns        int32
 	DatabaseMinConns        int32
 	DatabaseMaxConnLifetime time.Duration
 	DatabaseConnectTimeout  time.Duration
 	DatabaseQueryTimeout    time.Duration
+
+	OtelServiceName          string
+	OtelExporterOTLPEndpoint string
+	OtelExporterOTLPProtocol string
+	OtelResourceAttributes   string
+	OtelTracesSampler        string
 }
 
 func Load() (*Config, error) {
@@ -29,13 +33,11 @@ func Load() (*Config, error) {
 
 	cfg := &Config{}
 
-	// 1. Обязательная переменная DATABASE_URL (Fail Fast)
 	cfg.DatabaseURL = os.Getenv("DATABASE_URL")
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
 
-	//HTTP параметры с дефолтами
 	cfg.HTTPAddr = getEnv("HTTP_ADDR", ":8080")
 	cfg.LogLevel = getEnv("LOG_LEVEL", "info")
 
@@ -45,7 +47,6 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid SHUTDOWN_TIMEOUT: %w", err)
 	}
 
-	//Параметры пула БД
 	cfg.DatabaseMaxConns, err = getEnvInt32("DATABASE_MAX_CONNS", 10)
 	if err != nil {
 		return nil, fmt.Errorf("invalid DATABASE_MAX_CONNS: %w", err)
@@ -70,6 +71,12 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid DATABASE_QUERY_TIMEOUT: %w", err)
 	}
+
+	cfg.OtelServiceName = getEnv("OTEL_SERVICE_NAME", "trip-service")
+	cfg.OtelExporterOTLPEndpoint = getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+	cfg.OtelExporterOTLPProtocol = getEnv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+	cfg.OtelResourceAttributes = getEnv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=tripgo,deployment.environment=local")
+	cfg.OtelTracesSampler = getEnv("OTEL_TRACES_SAMPLER", "parentbased_always_on")
 
 	return cfg, nil
 }
