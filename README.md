@@ -1,44 +1,32 @@
-# TripGo — репозиторий для лабораторных работ
+# Сервис поездок (Trip Service)
 
-Заготовка курса «Разработка микросервисов на Go». Здесь вы делаете все пять
-работ: каждая следующая продолжает предыдущую, переписывать сервис с нуля не
-нужно.
+Реализация лабораторных работ курса «Разработка микросервисов на Go».
 
-## Что делать сразу
+## 🚀 Запуск
 
-1. **Fork** этого репозитория к себе. Форк нужен, чтобы преподаватели видели
-   список всех работ курса одной страницей.
-2. Заведите модуль:
-
-```bash
-git clone git@github.com:<ваш-логин>/<ваш-репозиторий>.git
-cd <ваш-репозиторий>
-go mod init github.com/<ваш-логин>/<ваш-репозиторий>
-```
-
-Путь модуля потом не меняется — иначе придётся править все импорты. Проще всего
-взять адрес своего репозитория, каким бы он ни был.
-
-Дальше — [`homework/docs/getting-started.md`](https://github.com/course-go-autumn-2026/course/blob/main/homework/docs/getting-started.md)
-в репозитории курса: инструменты, окружение, миграции, вид сданной работы.
-
-## Где что лежит
-
-| Что | Где |
-|---|---|
-| Задания, документация, контракты | [`course-go-autumn-2026/course`](https://github.com/course-go-autumn-2026/course) |
-| Слайды и записи лекций | [`lections/`](https://github.com/course-go-autumn-2026/course/tree/main/lections) |
-| Как оценивают, дедлайны, порядок сдачи | [`homework/docs/grading.md`](https://github.com/course-go-autumn-2026/course/blob/main/homework/docs/grading.md) |
-| Локальное окружение и утилита `tripgoctl` | [`course-go-autumn-2026/course-infra`](https://github.com/course-go-autumn-2026/course-infra) |
-
-Задания появляются по мере курса, каждое — после своей пары лекций.
-
-## Как сдавать
-
-Ветка `homework/NN` от `main`, pull request в `main` своего форка, ССЫЛКУ НИКУДА СКИДЫВАТЬ НЕ НУЖНО, ревьюер сам найдет ее внутри вашего форка. Подробно — в `grading.md` репозитория курса.
-
-## Чужие работы
-
-Форки видны всем, включая ваши. Смотреть чужие решения, пока идёт курс, —
-плохая идея: одинаковый код виден сразу, а разбираться на защите придётся
-самому.
+1. Поднимите окружение (PostgreSQL, Jaeger, Grafana, OTel Collector):
+   ```bash
+   tripgoctl cluster start
+   tripgoctl environment start
+   tripgoctl connect
+2. Примените миграции к базе данных (используйте порт из вывода tripgoctl connect или файла .env):
+    psql "postgres://tripgo:tripgo@localhost:22032/tripgo?sslmode=disable" -f migrations/00001_init.sql
+3. Запустите сервер:
+    make run
+4. Тесты и линтер:
+    make lint — запуск линтера (golangci-lint).
+    make test — запуск unit-тестов с флагом -race и подсчетом покрытия.
+    make test-integration — запуск интеграционных тестов с реальной БД.
+5. Архитектура:
+    Проект построен по принципам чистой архитектуры. Зависимости направлены строго внутрь: транспорт и репозитории знают про usecase, usecase знает про домен, а домен не знает ни про кого.
+    internal/domain/trip — доменные правила (например, FinishTrip). Не знает ни про HTTP, ни про базу данных.
+    internal/model — структуры данных (DTO), которые ходят между слоями.
+    internal/usecase/trip/... — бизнес-логика (create, get, finish). Знает только про интерфейсы репозиториев, объявленные в contract.go.
+    internal/http/... — транспортный слой (хендлеры). Знает про usecase и маппит доменные ошибки в HTTP-коды (domainerror).
+    internal/repository/trip — реализация репозитория (pgx + squirrel).
+    internal/infra — инфраструктура (транзакции, телеметрия).
+    internal/container — единая точка сборки зависимостей (ручной DI).
+6. Observability:
+    Логи: slog в формате JSON с полями trace_id и span_id.
+    Трейсы: OpenTelemetry с экспортом по HTTP (OTLP).
+    Метрики: tripgo.trips.created и tripgo.trips.completed (экспортируются в Prometheus и доступны в Grafana).
