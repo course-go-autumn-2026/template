@@ -111,10 +111,10 @@ func (r *Repository) Finish(ctx context.Context, id uuid.UUID, finishedAt time.T
 			"id":     id,
 			"status": string(trip.StatusActive),
 		}).
-		Suffix("RETURNING " + fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s",
+		Suffix("RETURNING " + fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s",
 			"id", "user_id", "driver_id", "start_latitude", "start_longitude",
 			"end_latitude", "end_longitude", "price", "status", "started_at",
-			"finished_at", "last_position_at", "created_at", "updated_at")).
+			"finished_at", "created_at", "updated_at")).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("build finish trip query: %w", err)
@@ -134,7 +134,6 @@ func (r *Repository) Finish(ctx context.Context, id uuid.UUID, finishedAt time.T
 		&d.Status,
 		&d.StartedAt,
 		&d.FinishedAt,
-		&d.LastPositionAt,
 		&d.CreatedAt,
 		&d.UpdatedAt,
 	)

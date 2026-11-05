@@ -25,7 +25,6 @@ var tripColumns = []string{
 	"status",
 	"started_at",
 	"finished_at",
-	"last_position_at",
 	"created_at",
 	"updated_at",
 }
@@ -56,7 +55,6 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*model.Trip, er
 		&d.Status,
 		&d.StartedAt,
 		&d.FinishedAt,
-		&d.LastPositionAt,
 		&d.CreatedAt,
 		&d.UpdatedAt,
 	)
