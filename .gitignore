@@ -4,5 +4,5 @@
 
 # Сборка
 bin/
-
+.idea
 .DS_Store
