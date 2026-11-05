@@ -1,0 +1,66 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters-settings:
+  depguard:
+    rules:
+      domain:
+        files:
+          - "**/internal/domain/**"
+        deny:
+          - pkg: "net/http"
+            desc: "Domain must not import net/http"
+          - pkg: "github.com/go-chi/chi/**"
+            desc: "Domain must not import chi"
+          - pkg: "github.com/jackc/pgx/**"
+            desc: "Domain must not import pgx"
+          - pkg: "github.com/Masterminds/squirrel"
+            desc: "Domain must not import squirrel"
+          - pkg: "go.opentelemetry.io/otel/**"
+            desc: "Domain must not import otel"
+          - pkg: "github.com/xotapy-main/courseGo/internal/generated"
+            desc: "Domain must not import generated api"
+      usecase:
+        files:
+          - "**/internal/usecase/**"
+        deny:
+          - pkg: "net/http"
+            desc: "Usecase must not import net/http"
+          - pkg: "github.com/go-chi/chi/**"
+            desc: "Usecase must not import chi"
+          - pkg: "github.com/jackc/pgx/**"
+            desc: "Usecase must not import pgx"
+          - pkg: "github.com/Masterminds/squirrel"
+            desc: "Usecase must not import squirrel"
+          - pkg: "github.com/xotapy-main/courseGo/internal/generated"
+            desc: "Usecase must not import generated api"
+      http:
+        files:
+          - "**/internal/http/**"
+        deny:
+          - pkg: "github.com/xotapy-main/courseGo/internal/repository/**"
+            desc: "HTTP must not import repository"
+          - pkg: "github.com/xotapy-main/courseGo/internal/infra/**"
+            desc: "HTTP must not import infra"
+
+linters:
+  enable:
+    - depguard
+    - errcheck
+    - forbidigo
+    - gochecknoinits
+    - gocritic
+    - gocyclo
+    - goconst
+    - gosec
+    - govet
+    - ineffassign
+    - makezero
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
