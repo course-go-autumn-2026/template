@@ -30,13 +30,16 @@ migrate-status:
 	$(GO) tool goose -dir migrations postgres "$(DATABASE_URL)" status
 
 run:
-	$(GO) run ./cmd/trip-service
+	$(GO) run ./cmd/service
 
 build:
-	$(GO) build -o bin/trip-service ./cmd/trip-service
+	$(GO) build -o bin/trip-service ./cmd/service
 
 test:
-	$(GO) test -race ./...
+	$(GO) test -race -cover ./internal/...
+
+test-integration:
+	$(GO) test -race -tags=integration -count=1 ./internal/repository/...
 
 lint:
 	golangci-lint run

@@ -28,6 +28,15 @@ type Config struct {
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
 	Database          Database
+	Telemetry         Telemetry
+}
+
+type Telemetry struct {
+	ServiceName   string
+	OTLPEndpoint  string
+	OTLPProtocol  string
+	Sampler       string
+	ResourceAttrs string
 }
 
 func Load() (Config, error) {
@@ -47,6 +56,13 @@ func Load() (Config, error) {
 			MaxConnLifetime: l.dur("DATABASE_MAX_CONN_LIFETIME", 30*time.Minute),
 			ConnectTimeout:  l.dur("DATABASE_CONNECT_TIMEOUT", 5*time.Second),
 			QueryTimeout:    l.dur("DATABASE_QUERY_TIMEOUT", 3*time.Second),
+		},
+		Telemetry: Telemetry{
+			ServiceName:   l.str("OTEL_SERVICE_NAME", "trip-service"),
+			OTLPEndpoint:  l.str("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
+			OTLPProtocol:  l.str("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"),
+			Sampler:       l.str("OTEL_TRACES_SAMPLER", "parentbased_always_on"),
+			ResourceAttrs: l.str("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=tripgo,deployment.environment=local"),
 		},
 	}
 
