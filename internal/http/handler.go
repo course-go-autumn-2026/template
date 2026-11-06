@@ -8,11 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/whxtelyy/template/internal/domain"
 	api "github.com/whxtelyy/template/internal/generated"
@@ -21,7 +21,7 @@ import (
 
 type Handler struct {
 	service      *service.TripService
-	db           *pgxpool.Pool
+	db           Pinger
 	logger       Logger
 	readyTimeout time.Duration
 }
@@ -31,7 +31,11 @@ type Logger interface {
 	Info(msg string, args ...any)
 }
 
-func NewHandler(service *service.TripService, db *pgxpool.Pool, logger Logger, readyTimeout time.Duration) *Handler {
+type Pinger interface {
+	Ping(context.Context) error
+}
+
+func NewHandler(service *service.TripService, db Pinger, logger Logger, readyTimeout time.Duration) *Handler {
 	return &Handler{service: service, db: db, logger: logger, readyTimeout: readyTimeout}
 }
 
@@ -167,6 +171,10 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err 
 }
 
 func decodeTripData(r *http.Request) (api.TripData, error) {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return api.TripData{}, errors.New("Content-Type must be application/json")
+	}
 	var raw map[string]json.RawMessage
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&raw); err != nil {

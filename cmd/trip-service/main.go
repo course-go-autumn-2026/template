@@ -23,8 +23,9 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "trip-service"))
 	if err := run(); err != nil {
-		slog.Error("trip service stopped", "error", err)
+		slog.Error("trip service failed", "error", err)
 		os.Exit(1)
 	}
 }
@@ -75,7 +76,7 @@ func run() error {
 	}
 
 	repo := repository.NewTripRepository(pool, cfg.Database.QueryTimeout)
-	txManager := tx.NewManager(pool, pgx.ReadCommitted, cfg.Database.QueryTimeout)
+	txManager := tx.NewManager(pool, pgx.ReadCommitted, cfg.Database.QueryTimeout, logger)
 	tripService := service.NewTripService(repo, txManager)
 	handler := httpapi.NewHandler(tripService, pool, logger, cfg.Database.QueryTimeout)
 	router := api.HandlerWithOptions(handler, api.ChiServerOptions{

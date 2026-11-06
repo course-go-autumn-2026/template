@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Executor interface {
@@ -19,14 +19,19 @@ type Executor interface {
 
 type contextKey struct{}
 
-type Manager struct {
-	pool    *pgxpool.Pool
-	iso     pgx.TxIsoLevel
-	timeout time.Duration
+type beginner interface {
+	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
 }
 
-func NewManager(pool *pgxpool.Pool, iso pgx.TxIsoLevel, timeout time.Duration) *Manager {
-	return &Manager{pool: pool, iso: iso, timeout: timeout}
+type Manager struct {
+	pool    beginner
+	iso     pgx.TxIsoLevel
+	timeout time.Duration
+	logger  *slog.Logger
+}
+
+func NewManager(pool beginner, iso pgx.TxIsoLevel, timeout time.Duration, logger *slog.Logger) *Manager {
+	return &Manager{pool: pool, iso: iso, timeout: timeout, logger: logger}
 }
 
 func (m *Manager) Do(ctx context.Context, fn func(ctx context.Context) error) (err error) {
@@ -46,8 +51,11 @@ func (m *Manager) Do(ctx context.Context, fn func(ctx context.Context) error) (e
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			rollbackCtx, cancelRollback := context.WithTimeout(context.WithoutCancel(ctx), m.timeout)
-			_ = tx.Rollback(rollbackCtx)
+			rollbackErr := tx.Rollback(rollbackCtx)
 			cancelRollback()
+			if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+				m.logger.ErrorContext(ctx, "rollback after panic failed", "error", rollbackErr)
+			}
 			panic(recovered)
 		}
 	}()
