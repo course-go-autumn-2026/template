@@ -1,4 +1,5 @@
 SERVICE=trip-service
+VERSION ?= dev
 
 .PHONY: run migrate generate test test-integration lint build docker-build
 
@@ -20,7 +21,7 @@ generate:
 	go generate ./internal/usecase/trip/... ./internal/http/...
 
 test:
-	go test -race -coverprofile=coverage.out ./...
+	go test -race -coverpkg=./internal/domain/...,./internal/usecase/... -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out | tail -n 1
 
 test-integration:
@@ -33,7 +34,7 @@ lint:
 	go tool golangci-lint run ./...
 
 build:
-	go build -o bin/$(SERVICE) ./cmd/trip-service
+	go build -ldflags="-X github.com/whxtelyy/template/internal/infra/telemetry.Version=$(VERSION)" -o bin/$(SERVICE) ./cmd/trip-service
 
 docker-build:
-	docker build -f deploy/Dockerfile -t trip-service:lab2 .
+	docker build --build-arg VERSION=$(VERSION) -f deploy/Dockerfile -t trip-service:lab2 .

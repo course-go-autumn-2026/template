@@ -3,10 +3,11 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
-	"time"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -26,10 +27,16 @@ type Providers struct {
 	Completed metric.Int64Counter
 }
 
+// Version can be set at build time with -ldflags -X.
+var Version = "dev"
+
 func (p *Providers) RecordCreated(ctx context.Context)   { p.Created.Add(ctx, 1) }
 func (p *Providers) RecordCompleted(ctx context.Context) { p.Completed.Add(ctx, 1) }
 
-func New(ctx context.Context) (*Providers, error) {
+func New(ctx context.Context, logger *slog.Logger) (*Providers, error) {
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		logger.Warn("telemetry export failed", "error", err)
+	}))
 	if strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")) == "" {
 		return nil, fmt.Errorf("OTEL_EXPORTER_OTLP_ENDPOINT is required")
 	}
@@ -38,7 +45,7 @@ func New(ctx context.Context) (*Providers, error) {
 		return nil, fmt.Errorf("OTEL_SERVICE_NAME is required")
 	}
 	res, err := resource.New(ctx, resource.WithFromEnv(), resource.WithAttributes(
-		attribute.String("service.name", service), attribute.String("service.version", "dev"),
+		attribute.String("service.name", service), attribute.String("service.version", Version),
 	))
 	if err != nil {
 		return nil, fmt.Errorf("telemetry resource: %w", err)
@@ -62,19 +69,8 @@ func New(ctx context.Context) (*Providers, error) {
 	if err != nil {
 		return nil, fmt.Errorf("telemetry exporter: %w", err)
 	}
-	var sampler sdktrace.Sampler
-	switch os.Getenv("OTEL_TRACES_SAMPLER") {
-	case "parentbased_always_on":
-		sampler = sdktrace.ParentBased(sdktrace.AlwaysSample())
-	case "always_on":
-		sampler = sdktrace.AlwaysSample()
-	case "always_off":
-		sampler = sdktrace.NeverSample()
-	default:
-		return nil, fmt.Errorf("unsupported OTEL_TRACES_SAMPLER")
-	}
-	tp := sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithSampler(sampler), sdktrace.WithBatcher(traceExporter))
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithResource(res), sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(10*time.Second))))
+	tp := sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(traceExporter))
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithResource(res), sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)))
 	meter := mp.Meter("trip-service")
 	created, err := meter.Int64Counter("tripgo.trips.created")
 	if err != nil {

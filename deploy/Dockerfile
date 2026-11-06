@@ -1,4 +1,5 @@
 FROM golang:1.27-alpine AS builder
+ARG VERSION=dev
 
 WORKDIR /src
 
@@ -13,7 +14,7 @@ RUN CGO_ENABLED=0 \
     go build \
     -trimpath \
     -buildvcs=false \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -X github.com/whxtelyy/template/internal/infra/telemetry.Version=${VERSION}" \
     -o /out/trip-service \
     ./cmd/trip-service
 

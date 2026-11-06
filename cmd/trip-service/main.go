@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -15,8 +16,9 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "trip-service")
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		logger.Error("trip service failed", "error", err)
 		os.Exit(1)
 	}
 }

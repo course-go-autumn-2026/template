@@ -5,6 +5,7 @@ package trip
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"testing"
 	"time"
@@ -33,7 +34,7 @@ func TestCreateRollsBackAfterInvalidHistoryInsert(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := NewTripRepository(pool, 5*time.Second)
-	tx := transaction.NewManager(pool, pgx.ReadCommitted, 5*time.Second)
+	tx := transaction.NewManager(pool, pgx.ReadCommitted, 5*time.Second, slog.Default())
 	id := uuid.New()
 	trip := domain.Trip{ID: id, UserID: uuid.New(), DriverID: uuid.New(), Status: domain.StatusActive}
 	defer func() { _, _ = pool.Exec(context.Background(), "DELETE FROM trips WHERE id=$1", id) }()

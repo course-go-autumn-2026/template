@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -15,6 +16,10 @@ import (
 )
 
 func decodeTripData(r *http.Request) (api.TripData, error) {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return api.TripData{}, errors.New("Content-Type must be application/json")
+	}
 	var raw map[string]json.RawMessage
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&raw); err != nil {
@@ -62,15 +67,6 @@ func decodeTripData(r *http.Request) (api.TripData, error) {
 	if data.UserId == uuid.Nil || data.DriverId == uuid.Nil {
 		return api.TripData{}, errors.New("user_id and driver_id must be non-empty UUIDs")
 	}
-	if err := validateCoordinates("start_point", data.StartPoint); err != nil {
-		return api.TripData{}, err
-	}
-	if err := validateCoordinates("end_point", data.EndPoint); err != nil {
-		return api.TripData{}, err
-	}
-	if data.Price < 0 {
-		return api.TripData{}, errors.New("price must be greater than or equal to zero")
-	}
 	return data, nil
 }
 
@@ -97,16 +93,6 @@ func validateCoordinateJSON(name string, value json.RawMessage) error {
 		if err := json.Unmarshal(value, &number); err != nil {
 			return fmt.Errorf("field %q in %s must be a number", field, name)
 		}
-	}
-	return nil
-}
-
-func validateCoordinates(name string, point api.Coordinates) error {
-	if point.Latitude < -90 || point.Latitude > 90 {
-		return fmt.Errorf("%s.latitude must be between -90 and 90", name)
-	}
-	if point.Longitude < -180 || point.Longitude > 180 {
-		return fmt.Errorf("%s.longitude must be between -180 and 180", name)
 	}
 	return nil
 }

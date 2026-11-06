@@ -47,9 +47,16 @@ func (c Coordinates) Validate(field string) error {
 	return nil
 }
 
-func (t *Trip) Finish(at time.Time) error {
+func (t Trip) CanFinish() error {
 	if t.Status != StatusActive {
 		return ErrTripCompleted
+	}
+	return nil
+}
+
+func (t *Trip) Finish(at time.Time) error {
+	if err := t.CanFinish(); err != nil {
+		return err
 	}
 	t.Status = StatusCompleted
 	t.FinishedAt = &at

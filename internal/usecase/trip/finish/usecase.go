@@ -2,7 +2,6 @@ package finish
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -27,7 +26,7 @@ func (u *UseCase) Execute(ctx context.Context, id uuid.UUID) (domain.Trip, error
 		if err != nil {
 			return err
 		}
-		if err := trip.Finish(time.Now()); err != nil {
+		if err := trip.CanFinish(); err != nil {
 			return err
 		}
 		trip, err = u.repo.Finish(txCtx, id)

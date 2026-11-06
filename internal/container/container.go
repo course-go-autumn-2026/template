@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/exaring/otelpgx"
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/metric/noop"
@@ -52,7 +53,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		level = slog.LevelInfo
 	}
 	logger := slog.New(telemetry.NewTraceHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))).With("service", "trip-service")
-	providers, err := telemetry.New(ctx)
+	providers, err := telemetry.New(ctx, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -85,16 +86,17 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 	repo := repository.NewTripRepository(pool, cfg.Database.QueryTimeout)
-	txManager := transaction.NewManager(pool, pgx.ReadCommitted, cfg.Database.QueryTimeout)
+	txManager := transaction.NewManager(pool, pgx.ReadCommitted, cfg.Database.QueryTimeout, logger)
 	handler := httpapi.NewHandler(create.New(repo, txManager, providers), get.New(repo), finish.New(repo, txManager, providers), pool, logger, cfg.Database.QueryTimeout)
-	router := api.HandlerWithOptions(handler, api.ChiServerOptions{ErrorHandlerFunc: handler.GeneratedErrorHandler})
 	metrics, err := middleware.Metrics(providers.Metric.Meter("trip-service/http"))
 	if err != nil {
 		pool.Close()
 		_ = providers.Shutdown(context.Background())
 		return nil, err
 	}
-	httpHandler := middleware.Recover(logger)(middleware.Tracing(providers.Trace)(middleware.Logging(logger)(metrics(router))))
+	router := chi.NewRouter()
+	router.Use(middleware.Recover(logger), middleware.Tracing(providers.Trace), middleware.Logging(logger), metrics)
+	httpHandler := api.HandlerWithOptions(handler, api.ChiServerOptions{BaseRouter: router, ErrorHandlerFunc: handler.GeneratedErrorHandler})
 	server := &http.Server{
 		Addr: cfg.HTTPAddr, Handler: httpHandler,
 		ReadTimeout: cfg.HTTPReadTimeout, ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,

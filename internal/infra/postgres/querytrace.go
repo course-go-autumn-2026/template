@@ -27,7 +27,8 @@ type QueryTracer struct {
 }
 
 func NewQueryTracer(delegate pgx.QueryTracer, meter metric.Meter) (*QueryTracer, error) {
-	duration, err := meter.Float64Histogram("db.client.operation.duration", metric.WithUnit("s"))
+	duration, err := meter.Float64Histogram("db.client.operation.duration", metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10))
 	if err != nil {
 		return nil, err
 	}

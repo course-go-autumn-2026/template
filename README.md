@@ -45,11 +45,13 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:22318
 
 ```bash
 make generate           # OpenAPI-код и моки через go:generate
-make test               # unit/HTTP-тесты, race detector и coverage.out
+make test               # все unit/HTTP-тесты с race detector; покрытие domain/usecase
 make test-integration   # интеграционные тесты с PostgreSQL
 make lint               # golangci-lint по .golangci.yml
 make build              # сборка исполняемого файла
 make docker-build       # многостадийный Docker-образ
+make build VERSION=1.2.3 # service.version через -ldflags (по умолчанию dev)
+make docker-build VERSION=1.2.3
 ```
 
 Для `make test-integration` необходимы доступная PostgreSQL, применённые миграции и корректный `DATABASE_URL` в `.env`. Интеграционные тесты используют тег `integration`; основной набор тестов не требует запущенной базы. Скрипты Makefile используют POSIX shell.
@@ -57,26 +59,37 @@ make docker-build       # многостадийный Docker-образ
 ## Архитектура
 
 ```text
-cmd/trip-service/                   точка входа, запуск и graceful shutdown
-internal/
-  container/                       сборка зависимостей (composition root)
-  domain/trip/                     модель поездки, правила и ошибки
-  usecase/trip/{create,get,finish}/ бизнес-сценарии и их интерфейсы
-  http/trip/{create,get,finish}/    HTTP-обработчики
-  http/domainerror/                преобразование ошибок в RFC 9457 Problem
-  http/middleware/                 Recover, Tracing, Logging, Metrics
-  repository/trip/                 реализация доступа к PostgreSQL
-  infra/postgres/transaction/      управление транзакциями
-  infra/postgres/                  трассировка SQL
-  infra/telemetry/                 OpenTelemetry и JSON-логи
-  generated/                       код из OpenAPI (не редактируется вручную)
-contracts/openapi/                 исходный контракт API
-migrations/                        схема базы данных
+.
+├── cmd/trip-service/              запуск и graceful shutdown
+├── internal/
+│   ├── config/                    конфигурация приложения
+│   ├── container/                 сборка зависимостей
+│   ├── domain/trip/               модель, правила и ошибки
+│   ├── usecase/trip/
+│   │   ├── create/                создание поездки
+│   │   ├── get/                   получение поездки
+│   │   └── finish/                завершение поездки
+│   ├── http/
+│   │   ├── trip/{create,get,finish}/ HTTP-обработчики
+│   │   ├── domainerror/           преобразование ошибок в RFC 9457
+│   │   └── middleware/            Recover → Tracing → Logging → Metrics
+│   ├── repository/trip/           запросы PostgreSQL
+│   ├── infra/
+│   │   ├── postgres/              трассировка SQL
+│   │   │   └── transaction/       управление транзакциями
+│   │   └── telemetry/             OpenTelemetry и JSON-логи
+│   └── generated/                 код из OpenAPI (не редактировать вручную)
+├── contracts/openapi/             исходный контракт API
+└── migrations/                    схема базы данных
 ```
 
 **Зависимости направлены внутрь.** Домен не зависит от HTTP, PostgreSQL и OTel. Usecase использует доменную модель и узкие интерфейсы из собственных `contract.go`; HTTP-обработчики также описывают свои зависимости на стороне потребителя. Конкретные реализации связываются в `internal/container`, без DI-фреймворка. Границы слоёв дополнительно контролирует `depguard`.
 
+**Почему нет отдельного `model`.** Между слоями используется `domain.Trip`: модель поездки пока едина, поэтому промежуточная структура не добавляет полезной изоляции. При появлении различных контрактов слоёв будет оправдано выделение отдельной модели.
+
 **Транзакции и конкурентность.** Менеджер в `internal/infra/postgres/transaction` выполняет `COMMIT` или `ROLLBACK`. Создание поездки и записи в истории статусов атомарно. Частичный уникальный индекс не позволяет водителю иметь более одной активной поездки; завершение выполняется условным `UPDATE`. Идемпотентность основана на резервировании ключа в транзакции и сравнении SHA-256 хэша тела запроса. Контракт OpenAPI и миграции в ЛР2 не изменялись.
+
+Usecase проверяет допустимость завершения через `CanFinish`, а PostgreSQL атомарно меняет статус и задаёт `finished_at`. `now()` внутри одной транзакции даёт согласованное время поездки и истории. `COMMIT` использует контекст запроса с таймаутом; `ROLLBACK` — `context.WithoutCancel` с таймаутом. Неудачный откат при panic логируется, исходная panic передаётся дальше.
 
 ## Тестирование
 
@@ -87,11 +100,15 @@ migrations/                        схема базы данных
 
 Целевой порог покрытия `internal/domain/...` и `internal/usecase/...` - не ниже 50%. Запуск тестов и линтера выполняется в Linux/WSL.
 
+`make test` запускает тесты всех пакетов, а `-coverpkg` ограничивает измерение покрытия пакетами domain/usecase. Итог выводится из `coverage.out`.
+
 ## Логи, метрики и трейсы
 
 На каждый HTTP-запрос пишется структурированный JSON-лог через `slog`: метод, шаблон маршрута, статус, длительность, `trace_id` и `span_id`. Тела запросов и персональные идентификаторы не используются как метки метрик. Порядок middleware: **Recover → Tracing → Logging → Metrics → Router**.
 
 Трейсы HTTP и запросов PostgreSQL отправляются по OTLP в коллектор; для pgx используется `otelpgx`. Данные можно просматривать в **Jaeger**, а метрики - в **Prometheus/Grafana**. Адреса выводит `tripgoctl connect`. Недоступность коллектора не должна останавливать HTTP API.
+
+OTel SDK читает `OTEL_TRACES_SAMPLER` и `OTEL_TRACES_SAMPLER_ARG`; например, `parentbased_traceidratio` и `0.1` включают выборку 10% корневых трейсов. `OTEL_METRIC_EXPORT_INTERVAL` задаётся в миллисекундах (`10000` в `.env.example`). Ошибки OTel направляются в JSON-лог с уровнем Warn. Гистограммы длительности используют секунды и границы от `0.005` до `10`. Шаблоны маршрутов берутся из chi, поэтому UUID не попадают в метки.
 
 Основные метрики:
 

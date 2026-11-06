@@ -149,7 +149,7 @@ func (r *TripRepository) Finish(ctx context.Context, id uuid.UUID) (domain.Trip,
 	if getErr == nil {
 		return domain.Trip{}, domain.ErrTripCompleted
 	}
-	return domain.Trip{}, getErr
+	return domain.Trip{}, fmt.Errorf("finish trip: read after update: %w", getErr)
 }
 
 func (r *TripRepository) ReserveIdempotencyKey(

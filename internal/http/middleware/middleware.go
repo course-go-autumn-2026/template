@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
-	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -22,16 +22,15 @@ import (
 type Wrapper func(http.Handler) http.Handler
 
 func Route(r *http.Request) string {
-	path := r.URL.Path
-	if path == "/health" || path == "/ready" || path == "/api/v1/trips" {
-		return path
-	}
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) == 4 && parts[0] == "api" && parts[1] == "v1" && parts[2] == "trips" {
-		return "/api/v1/trips/{tripId}"
-	}
-	if len(parts) == 5 && parts[0] == "api" && parts[1] == "v1" && parts[2] == "trips" && parts[4] == "finish" {
-		return "/api/v1/trips/{tripId}/finish"
+	if routeCtx := chi.RouteContext(r.Context()); routeCtx != nil {
+		if pattern := routeCtx.RoutePattern(); pattern != "" {
+			return pattern
+		}
+		// Before dispatch, match against chi's tree without changing the request context.
+		matched := chi.NewRouteContext()
+		if routeCtx.Routes != nil && routeCtx.Routes.Match(matched, r.Method, r.URL.Path) {
+			return matched.RoutePattern()
+		}
 	}
 	return "unmatched"
 }
@@ -78,8 +77,17 @@ func Tracing(provider trace.TracerProvider) Wrapper {
 	return func(next http.Handler) http.Handler {
 		inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			span := trace.SpanFromContext(r.Context())
-			span.SetAttributes(attribute.String("http.route", Route(r)))
 			recorder := &responseWriter{ResponseWriter: w}
+			defer func() {
+				span.SetName(r.Method + " " + Route(r))
+				span.SetAttributes(attribute.String("http.route", Route(r)))
+				if value := recover(); value != nil {
+					span.SetStatus(codes.Error, "handler panic")
+					span.SetAttributes(attribute.String("error.type", "internal_error"), attribute.Int("http.response.status_code", http.StatusInternalServerError))
+					// The SDK's deferred span.End records the original exception during unwinding.
+					panic(value)
+				}
+			}()
 			next.ServeHTTP(recorder, r)
 			if recorder.status >= 500 {
 				span.SetStatus(codes.Error, "server error")
@@ -114,7 +122,8 @@ func Logging(logger *slog.Logger) Wrapper {
 }
 
 func Metrics(meter metric.Meter) (Wrapper, error) {
-	duration, err := meter.Float64Histogram("http.server.request.duration", metric.WithUnit("s"))
+	duration, err := meter.Float64Histogram("http.server.request.duration", metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10))
 	if err != nil {
 		return nil, err
 	}
@@ -131,13 +140,19 @@ func Metrics(meter metric.Meter) (Wrapper, error) {
 			defer active.Add(r.Context(), -1, metric.WithAttributes(attrs...))
 			start := time.Now()
 			recorder := &responseWriter{ResponseWriter: w}
+			completed := false
+			defer func() {
+				status := recorder.status
+				if !completed {
+					status = http.StatusInternalServerError
+				} else if status == 0 {
+					status = http.StatusOK
+				}
+				attrs = append(attrs, attribute.Int("http.response.status_code", status))
+				duration.Record(r.Context(), time.Since(start).Seconds(), metric.WithAttributes(attrs...))
+			}()
 			next.ServeHTTP(recorder, r)
-			status := recorder.status
-			if status == 0 {
-				status = http.StatusOK
-			}
-			attrs = append(attrs, attribute.Int("http.response.status_code", status))
-			duration.Record(r.Context(), time.Since(start).Seconds(), metric.WithAttributes(attrs...))
+			completed = true
 		})
 	}, nil
 }

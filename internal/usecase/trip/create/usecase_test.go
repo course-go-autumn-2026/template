@@ -65,3 +65,24 @@ func TestExecuteRollsBackOnHistoryError(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 }
+
+func TestExecuteBusinessValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		req   Request
+		field string
+	}{
+		{"latitude", Request{StartPoint: domain.Coordinates{Latitude: 91}}, "start_point.latitude"},
+		{"longitude", Request{EndPoint: domain.Coordinates{Longitude: -181}}, "end_point.longitude"},
+		{"price", Request{Price: -1}, "price"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			_, err := New(NewMocktripRepository(ctrl), NewMocktxManager(ctrl), nil).Execute(context.Background(), tc.req)
+			var validation *domain.ValidationError
+			if !errors.As(err, &validation) || validation.Field != tc.field {
+				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}
