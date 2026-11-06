@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/xotapy-main/courseGo/config"
+	api "github.com/xotapy-main/courseGo/internal/generated"
 	"github.com/xotapy-main/courseGo/internal/handler"
 	"github.com/xotapy-main/courseGo/internal/repository"
 	"github.com/xotapy-main/courseGo/internal/txmanager"
@@ -53,12 +56,23 @@ func main() {
 	h := handler.New(tripRepo, historyRepo, txMgr, pool)
 
 	r := chi.NewRouter()
-	r.Get("/health", h.Health)
-	r.Get("/ready", h.Ready)
-	r.Route("/api/v1/trips", func(r chi.Router) {
-		r.Post("/", h.CreateTrip)
-		r.Get("/{tripId}", h.GetTrip)
-		r.Post("/{tripId}/finish", h.FinishTrip)
+
+	api.HandlerWithOptions(h, api.ChiServerOptions{
+		BaseRouter: r,
+		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusBadRequest)
+			detail := fmt.Sprintf("Invalid URL parameter: %v", err)
+			instance := r.URL.Path
+			_ = json.NewEncoder(w).Encode(api.Problem{
+				Type:     "https://tripgo.example/problems/invalid_request",
+				Title:    "Invalid request",
+				Status:   http.StatusBadRequest,
+				Detail:   &detail,
+				Instance: &instance,
+				Code:     "invalid_request",
+			})
+		},
 	})
 
 	srv := &http.Server{
