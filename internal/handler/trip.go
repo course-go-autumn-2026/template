@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -12,25 +14,37 @@ import (
 	api "github.com/XrystikLK/template/internal/generated"
 	"github.com/XrystikLK/template/internal/repository"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+type TripRepository interface {
+	CreateTrip(ctx context.Context, trip *repository.Trip) error
+	GetTripByID(ctx context.Context, id uuid.UUID) (*repository.Trip, error)
+	FinishTrip(ctx context.Context, id uuid.UUID, finishedAt time.Time) (*repository.Trip, error)
+	AddStatusHistory(ctx context.Context, history *repository.StatusHistory) error
+}
+
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
 
 type TripHandler struct {
 	api.Unimplemented
-	repo      *repository.TripRepository
-	txManager db.TxManager
-	pool      *pgxpool.Pool
+	repo        TripRepository
+	txManager   db.TxManager
+	pinger      Pinger
+	pingTimeout time.Duration
 }
 
-func NewTripHandler(repo *repository.TripRepository, txManager db.TxManager, pool *pgxpool.Pool) *TripHandler {
+func NewTripHandler(repo TripRepository, txManager db.TxManager, pinger Pinger) *TripHandler {
 	return &TripHandler{
-		repo:      repo,
-		txManager: txManager,
-		pool:      pool,
+		repo:        repo,
+		txManager:   txManager,
+		pinger:      pinger,
+		pingTimeout: 2 * time.Second,
 	}
 }
 
-func writeProblem(w http.ResponseWriter, status int, code, title, detail, instance string) {
+func WriteProblem(w http.ResponseWriter, status int, code, title, detail, instance string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 
@@ -71,30 +85,103 @@ func toAPITrip(t *repository.Trip) api.Trip {
 	}
 }
 
+type rawCoordinates struct {
+	Latitude  *float64 `json:"latitude"`
+	Longitude *float64 `json:"longitude"`
+}
+
+type rawCreateTripRequest struct {
+	UserID     *uuid.UUID      `json:"user_id"`
+	DriverID   *uuid.UUID      `json:"driver_id"`
+	StartPoint *rawCoordinates `json:"start_point"`
+	EndPoint   *rawCoordinates `json:"end_point"`
+	Price      *int64          `json:"price"`
+}
+
 func (h *TripHandler) CreateTrip(w http.ResponseWriter, r *http.Request, params api.CreateTripParams) {
-	var req api.CreateTripJSONRequestBody
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
+
+	var req rawCreateTripRequest
 	if err := decoder.Decode(&req); err != nil {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", err.Error(), r.URL.Path)
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", err.Error(), r.URL.Path)
 		return
 	}
 
-	if req.UserId == uuid.Nil || req.DriverId == uuid.Nil {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "user_id and driver_id cannot be empty", r.URL.Path)
+	// Проверяем, что после первого JSON-объекта нет мусора или второго объекта
+	var extra json.RawMessage
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "unexpected data after JSON object", r.URL.Path)
 		return
 	}
 
-	if req.Price < 0 {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "price must be greater than or equal to 0", r.URL.Path)
+	// Проверка наличия обязательных полей
+	if req.UserID == nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "user_id is required", r.URL.Path)
+		return
+	}
+	if *req.UserID == uuid.Nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "user_id cannot be empty", r.URL.Path)
 		return
 	}
 
-	if req.StartPoint.Latitude < -90 || req.StartPoint.Latitude > 90 ||
-		req.StartPoint.Longitude < -180 || req.StartPoint.Longitude > 180 ||
-		req.EndPoint.Latitude < -90 || req.EndPoint.Latitude > 90 ||
-		req.EndPoint.Longitude < -180 || req.EndPoint.Longitude > 180 {
-		writeProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "coordinates out of valid range", r.URL.Path)
+	if req.DriverID == nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "driver_id is required", r.URL.Path)
+		return
+	}
+	if *req.DriverID == uuid.Nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "driver_id cannot be empty", r.URL.Path)
+		return
+	}
+
+	if req.StartPoint == nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "start_point is required", r.URL.Path)
+		return
+	}
+	if req.StartPoint.Latitude == nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "start_point.latitude is required", r.URL.Path)
+		return
+	}
+	if *req.StartPoint.Latitude < -90 || *req.StartPoint.Latitude > 90 {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "start_point.latitude must be between -90 and 90", r.URL.Path)
+		return
+	}
+	if req.StartPoint.Longitude == nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "start_point.longitude is required", r.URL.Path)
+		return
+	}
+	if *req.StartPoint.Longitude < -180 || *req.StartPoint.Longitude > 180 {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "start_point.longitude must be between -180 and 180", r.URL.Path)
+		return
+	}
+
+	if req.EndPoint == nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "end_point is required", r.URL.Path)
+		return
+	}
+	if req.EndPoint.Latitude == nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "end_point.latitude is required", r.URL.Path)
+		return
+	}
+	if *req.EndPoint.Latitude < -90 || *req.EndPoint.Latitude > 90 {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "end_point.latitude must be between -90 and 90", r.URL.Path)
+		return
+	}
+	if req.EndPoint.Longitude == nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "end_point.longitude is required", r.URL.Path)
+		return
+	}
+	if *req.EndPoint.Longitude < -180 || *req.EndPoint.Longitude > 180 {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "end_point.longitude must be between -180 and 180", r.URL.Path)
+		return
+	}
+
+	if req.Price == nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "price is required", r.URL.Path)
+		return
+	}
+	if *req.Price < 0 {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", "price must be greater than or equal to 0", r.URL.Path)
 		return
 	}
 
@@ -103,13 +190,13 @@ func (h *TripHandler) CreateTrip(w http.ResponseWriter, r *http.Request, params 
 
 	trip := &repository.Trip{
 		ID:             tripID,
-		UserID:         req.UserId,
-		DriverID:       req.DriverId,
-		StartLatitude:  req.StartPoint.Latitude,
-		StartLongitude: req.StartPoint.Longitude,
-		EndLatitude:    req.EndPoint.Latitude,
-		EndLongitude:   req.EndPoint.Longitude,
-		Price:          req.Price,
+		UserID:         *req.UserID,
+		DriverID:       *req.DriverID,
+		StartLatitude:  *req.StartPoint.Latitude,
+		StartLongitude: *req.StartPoint.Longitude,
+		EndLatitude:    *req.EndPoint.Latitude,
+		EndLongitude:   *req.EndPoint.Longitude,
+		Price:          *req.Price,
 		Status:         "active",
 		StartedAt:      now,
 		CreatedAt:      now,
@@ -132,10 +219,11 @@ func (h *TripHandler) CreateTrip(w http.ResponseWriter, r *http.Request, params 
 
 	if err != nil {
 		if errors.Is(err, repository.ErrDriverBusy) {
-			writeProblem(w, http.StatusConflict, "driver_busy", "Driver busy", "Driver already has an active trip", r.URL.Path)
+			WriteProblem(w, http.StatusConflict, "driver_busy", "Driver busy", "Driver already has an active trip", r.URL.Path)
 			return
 		}
-		writeProblem(w, http.StatusInternalServerError, "internal_error", "Internal Server Error", err.Error(), r.URL.Path)
+		slog.ErrorContext(r.Context(), "failed to create trip", "error", err)
+		WriteProblem(w, http.StatusInternalServerError, "internal_error", "Internal server error", "An unexpected error occurred", r.URL.Path)
 		return
 	}
 
@@ -149,10 +237,11 @@ func (h *TripHandler) GetTrip(w http.ResponseWriter, r *http.Request, tripId api
 	trip, err := h.repo.GetTripByID(r.Context(), tripId)
 	if err != nil {
 		if errors.Is(err, repository.ErrTripNotFound) {
-			writeProblem(w, http.StatusNotFound, "trip_not_found", "Trip not found", "Trip was not found", r.URL.Path)
+			WriteProblem(w, http.StatusNotFound, "trip_not_found", "Trip not found", "Trip was not found", r.URL.Path)
 			return
 		}
-		writeProblem(w, http.StatusInternalServerError, "internal_error", "Internal Server Error", err.Error(), r.URL.Path)
+		slog.ErrorContext(r.Context(), "failed to get trip", "error", err, "trip_id", tripId)
+		WriteProblem(w, http.StatusInternalServerError, "internal_error", "Internal server error", "An unexpected error occurred", r.URL.Path)
 		return
 	}
 
@@ -184,14 +273,15 @@ func (h *TripHandler) FinishTrip(w http.ResponseWriter, r *http.Request, tripId 
 
 	if err != nil {
 		if errors.Is(err, repository.ErrTripNotFound) {
-			writeProblem(w, http.StatusNotFound, "trip_not_found", "Trip not found", "Trip was not found", r.URL.Path)
+			WriteProblem(w, http.StatusNotFound, "trip_not_found", "Trip not found", "Trip was not found", r.URL.Path)
 			return
 		}
 		if errors.Is(err, repository.ErrTripAlreadyCompleted) {
-			writeProblem(w, http.StatusConflict, "trip_completed", "Trip completed", "Operation is not allowed for a completed trip", r.URL.Path)
+			WriteProblem(w, http.StatusConflict, "trip_completed", "Trip completed", "Operation is not allowed for a completed trip", r.URL.Path)
 			return
 		}
-		writeProblem(w, http.StatusInternalServerError, "internal_error", "Internal Server Error", err.Error(), r.URL.Path)
+		slog.ErrorContext(r.Context(), "failed to finish trip", "error", err, "trip_id", tripId)
+		WriteProblem(w, http.StatusInternalServerError, "internal_error", "Internal server error", "An unexpected error occurred", r.URL.Path)
 		return
 	}
 
@@ -208,7 +298,11 @@ func (h *TripHandler) Health(w http.ResponseWriter, r *http.Request) {
 
 func (h *TripHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := h.pool.Ping(r.Context()); err != nil {
+
+	pingCtx, cancel := context.WithTimeout(r.Context(), h.pingTimeout)
+	defer cancel()
+
+	if err := h.pinger.Ping(pingCtx); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(api.HealthResponse{Status: api.Unavailable})
 		return

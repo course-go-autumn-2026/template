@@ -3,12 +3,11 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/XrystikLK/template/internal/config"
 	"github.com/XrystikLK/template/internal/db"
@@ -21,68 +20,62 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
 	}
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: cfg.ParsedLogLevel,
+	}))
+	slog.SetDefault(logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	pool, err := db.InitPool(ctx, cfg)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("failed to initialize db pool", "error", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
-	queryTimeout := 3 * time.Second
-	if cfg.DatabaseQueryTimeout != "" {
-		if d, err := time.ParseDuration(cfg.DatabaseQueryTimeout); err == nil {
-			queryTimeout = d
-		}
-	}
-
 	txManager := db.NewTxManager(pool)
-	tripRepo := repository.NewTripRepository(pool, queryTimeout)
+	tripRepo := repository.NewTripRepository(pool, cfg.DatabaseQueryTimeout)
 	tripHandler := handler.NewTripHandler(tripRepo, txManager, pool)
 
 	r := chi.NewRouter()
-	api.HandlerFromMux(tripHandler, r)
-
-	addr := cfg.HTTPAddr
-	if addr == "" {
-		addr = ":8080"
-	}
+	api.HandlerWithOptions(tripHandler, api.ChiServerOptions{
+		BaseRouter: r,
+		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			handler.WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request", err.Error(), r.URL.Path)
+		},
+	})
 
 	server := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.HTTPAddr,
 		Handler:           r,
-		ReadTimeout:       5 * time.Second,
-		ReadHeaderTimeout: 2 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		IdleTimeout:       30 * time.Second,
+		ReadTimeout:       cfg.HTTPReadTimeout,
+		ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
+		WriteTimeout:      cfg.HTTPWriteTimeout,
+		IdleTimeout:       cfg.HTTPIdleTimeout,
 	}
 
-	log.Printf("server starting on %s", addr)
+	slog.Info("server starting", "addr", cfg.HTTPAddr)
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal(err)
+			slog.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	log.Printf("shutting down gracefully..")
+	slog.Info("shutting down gracefully...")
 
-	shutdownTimeout := 10 * time.Second
-	if cfg.ShutdownTimeout != "" {
-		if d, err := time.ParseDuration(cfg.ShutdownTimeout); err == nil {
-			shutdownTimeout = d
-		}
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("server shutdown error: %v", err)
+		slog.Error("server shutdown error", "error", err)
 	}
 }

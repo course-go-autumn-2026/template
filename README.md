@@ -30,6 +30,10 @@ make run
 | Переменная | По умолчанию | Описание |
 |---|---|---|
 | `HTTP_ADDR` | `:8080` | Адрес и порт HTTP-сервера |
+| `HTTP_READ_TIMEOUT` | `5s` | Таймаут на чтение полного запроса |
+| `HTTP_READ_HEADER_TIMEOUT` | `2s` | Таймаут на чтение заголовков HTTP-запроса |
+| `HTTP_WRITE_TIMEOUT` | `5s` | Таймаут на запись HTTP-ответа |
+| `HTTP_IDLE_TIMEOUT` | `30s` | Таймаут ожидания следующего запроса в keep-alive |
 | `LOG_LEVEL` | `info` | Уровень логирования: `debug`, `info`, `warn`, `error` |
 | `SHUTDOWN_TIMEOUT` | `10s` | Бюджет времени на graceful shutdown |
 | `DATABASE_URL` | обязательная | DSN строка подключения к PostgreSQL |

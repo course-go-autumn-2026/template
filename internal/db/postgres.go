@@ -2,8 +2,7 @@ package db
 
 import (
 	"context"
-	"strconv"
-	"time"
+	"fmt"
 
 	"github.com/XrystikLK/template/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,29 +11,25 @@ import (
 func InitPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка парсинга DATABASE_URL: %w", err)
 	}
 
-	if maxConns, err := strconv.Atoi(cfg.DatabaseMaxConns); err == nil && maxConns > 0 {
-		poolCfg.MaxConns = int32(maxConns)
-	}
-	if minConns, err := strconv.Atoi(cfg.DatabaseMinConns); err == nil && minConns > 0 {
-		poolCfg.MinConns = int32(minConns)
-	}
-	if maxLifetime, err := time.ParseDuration(cfg.DatabaseMaxConnLifetime); err == nil {
-		poolCfg.MaxConnLifetime = maxLifetime
-	}
-	if connTimeout, err := time.ParseDuration(cfg.DatabaseConnectTimeout); err == nil {
-		poolCfg.ConnConfig.ConnectTimeout = connTimeout
-	}
+	poolCfg.MaxConns = cfg.DatabaseMaxConns
+	poolCfg.MinConns = cfg.DatabaseMinConns
+	poolCfg.MaxConnLifetime = cfg.DatabaseMaxConnLifetime
+	poolCfg.ConnConfig.ConnectTimeout = cfg.DatabaseConnectTimeout
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка создания пула соединений: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
+
+	pingCtx, cancel := context.WithTimeout(ctx, cfg.DatabaseConnectTimeout)
+	defer cancel()
+
+	if err := pool.Ping(pingCtx); err != nil {
 		pool.Close()
-		return nil, err
+		return nil, fmt.Errorf("база данных недоступна при старте: %w", err)
 	}
 
 	return pool, nil

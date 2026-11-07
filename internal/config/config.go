@@ -2,38 +2,177 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	HTTPAddr                string
-	ShutdownTimeout         string
+	HTTPAddr              string
+	HTTPReadTimeout       time.Duration
+	HTTPReadHeaderTimeout time.Duration
+	HTTPWriteTimeout      time.Duration
+	HTTPIdleTimeout       time.Duration
+	ShutdownTimeout       time.Duration
+	LogLevel              string
+	ParsedLogLevel        slog.Level
+
 	DatabaseURL             string
-	DatabaseMaxConns        string
-	DatabaseMinConns        string
-	DatabaseMaxConnLifetime string
-	DatabaseConnectTimeout  string
-	DatabaseQueryTimeout    string
+	DatabaseMaxConns        int32
+	DatabaseMinConns        int32
+	DatabaseMaxConnLifetime time.Duration
+	DatabaseConnectTimeout  time.Duration
+	DatabaseQueryTimeout    time.Duration
 }
 
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		return nil, fmt.Errorf("DATABASE_URL обязательна, но не задана")
+	if strings.TrimSpace(dbURL) == "" {
+		return nil, fmt.Errorf("переменная DATABASE_URL обязательна, но не задана")
+	}
+
+	httpAddr := os.Getenv("HTTP_ADDR")
+	if httpAddr == "" {
+		httpAddr = ":8080"
+	}
+
+	readTimeout, err := parseDurationEnv("HTTP_READ_TIMEOUT", "5s")
+	if err != nil {
+		return nil, err
+	}
+
+	readHeaderTimeout, err := parseDurationEnv("HTTP_READ_HEADER_TIMEOUT", "2s")
+	if err != nil {
+		return nil, err
+	}
+
+	writeTimeout, err := parseDurationEnv("HTTP_WRITE_TIMEOUT", "5s")
+	if err != nil {
+		return nil, err
+	}
+
+	idleTimeout, err := parseDurationEnv("HTTP_IDLE_TIMEOUT", "30s")
+	if err != nil {
+		return nil, err
+	}
+
+	shutdownTimeout, err := parseDurationEnv("SHUTDOWN_TIMEOUT", "10s")
+	if err != nil {
+		return nil, err
+	}
+
+	logLevelStr := os.Getenv("LOG_LEVEL")
+	if logLevelStr == "" {
+		logLevelStr = "info"
+	}
+	parsedLevel, err := parseLogLevel(logLevelStr)
+	if err != nil {
+		return nil, err
+	}
+
+	maxConns, err := parsePositiveIntEnv("DATABASE_MAX_CONNS", 10)
+	if err != nil {
+		return nil, err
+	}
+
+	minConns, err := parseNonNegativeIntEnv("DATABASE_MIN_CONNS", 2)
+	if err != nil {
+		return nil, err
+	}
+
+	if minConns > maxConns {
+		return nil, fmt.Errorf("некорректная конфигурация пула: DATABASE_MIN_CONNS (%d) не может превышать DATABASE_MAX_CONNS (%d)", minConns, maxConns)
+	}
+
+	maxConnLifetime, err := parseDurationEnv("DATABASE_MAX_CONN_LIFETIME", "30m")
+	if err != nil {
+		return nil, err
+	}
+
+	connectTimeout, err := parseDurationEnv("DATABASE_CONNECT_TIMEOUT", "5s")
+	if err != nil {
+		return nil, err
+	}
+
+	queryTimeout, err := parseDurationEnv("DATABASE_QUERY_TIMEOUT", "3s")
+	if err != nil {
+		return nil, err
 	}
 
 	return &Config{
-		HTTPAddr:                os.Getenv("HTTP_ADDR"),
-		ShutdownTimeout:         os.Getenv("SHUTDOWN_TIMEOUT"),
+		HTTPAddr:                httpAddr,
+		HTTPReadTimeout:         readTimeout,
+		HTTPReadHeaderTimeout:   readHeaderTimeout,
+		HTTPWriteTimeout:        writeTimeout,
+		HTTPIdleTimeout:         idleTimeout,
+		ShutdownTimeout:         shutdownTimeout,
+		LogLevel:                logLevelStr,
+		ParsedLogLevel:          parsedLevel,
 		DatabaseURL:             dbURL,
-		DatabaseMaxConns:        os.Getenv("DATABASE_MAX_CONNS"),
-		DatabaseMinConns:        os.Getenv("DATABASE_MIN_CONNS"),
-		DatabaseMaxConnLifetime: os.Getenv("DATABASE_MAX_CONN_LIFETIME"),
-		DatabaseConnectTimeout:  os.Getenv("DATABASE_CONNECT_TIMEOUT"),
-		DatabaseQueryTimeout:    os.Getenv("DATABASE_QUERY_TIMEOUT"),
+		DatabaseMaxConns:        int32(maxConns),
+		DatabaseMinConns:        int32(minConns),
+		DatabaseMaxConnLifetime: maxConnLifetime,
+		DatabaseConnectTimeout:  connectTimeout,
+		DatabaseQueryTimeout:    queryTimeout,
 	}, nil
+}
+
+func parseDurationEnv(key, defaultVal string) (time.Duration, error) {
+	valStr := os.Getenv(key)
+	if valStr == "" {
+		valStr = defaultVal
+	}
+	d, err := time.ParseDuration(valStr)
+	if err != nil {
+		return 0, fmt.Errorf("некорректное значение переменной %s: %w", key, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("переменная %s должна быть положительной продолжительностью, получено: %s", key, valStr)
+	}
+	return d, nil
+}
+
+func parsePositiveIntEnv(key string, defaultVal int) (int, error) {
+	valStr := os.Getenv(key)
+	if valStr == "" {
+		return defaultVal, nil
+	}
+	val, err := strconv.Atoi(valStr)
+	if err != nil || val <= 0 {
+		return 0, fmt.Errorf("некорректное значение переменной %s: должно быть положительным целым числом, получено: %q", key, valStr)
+	}
+	return val, nil
+}
+
+func parseNonNegativeIntEnv(key string, defaultVal int) (int, error) {
+	valStr := os.Getenv(key)
+	if valStr == "" {
+		return defaultVal, nil
+	}
+	val, err := strconv.Atoi(valStr)
+	if err != nil || val < 0 {
+		return 0, fmt.Errorf("некорректное значение переменной %s: должно быть неотрицательным целым числом, получено: %q", key, valStr)
+	}
+	return val, nil
+}
+
+func parseLogLevel(level string) (slog.Level, error) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		return slog.LevelDebug, nil
+	case "info":
+		return slog.LevelInfo, nil
+	case "warn", "warning":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return slog.LevelInfo, fmt.Errorf("некорректное значение переменной LOG_LEVEL: %q (поддерживаются debug, info, warn, error)", level)
+	}
 }
