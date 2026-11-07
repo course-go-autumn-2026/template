@@ -173,3 +173,51 @@ func TestTripFinish(t *testing.T) {
 		}
 	})
 }
+
+func TestRestoreTrip(t *testing.T) {
+	id := uuid.New()
+	userID := uuid.New()
+	driverID := uuid.New()
+	start := trip.Coordinates{Latitude: 55.75, Longitude: 37.61}
+	end := trip.Coordinates{Latitude: 55.80, Longitude: 37.70}
+	now := time.Now().UTC()
+	finishedAt := now.Add(10 * time.Minute)
+
+	tr := trip.Restore(
+		id, userID, driverID,
+		start, end,
+		500,
+		trip.StatusCompleted,
+		now,
+		&finishedAt,
+		now,
+		finishedAt,
+	)
+
+	if tr == nil {
+		t.Fatal("expected restored trip, got nil")
+	}
+	if tr.ID != id || tr.UserID != userID || tr.DriverID != driverID {
+		t.Errorf("ids mismatch")
+	}
+	if tr.Status != trip.StatusCompleted {
+		t.Errorf("expected status completed, got %s", tr.Status)
+	}
+	if tr.Price != 500 {
+		t.Errorf("expected price 500, got %d", tr.Price)
+	}
+	if tr.FinishedAt == nil || !tr.FinishedAt.Equal(finishedAt) {
+		t.Errorf("finishedAt mismatch")
+	}
+}
+
+func TestValidationError_Error(t *testing.T) {
+	err := &trip.ValidationError{
+		Field:   "price",
+		Message: "must be positive",
+	}
+	expected := "validation error for field price: must be positive"
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}

@@ -4,8 +4,6 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 )
 
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
@@ -14,14 +12,25 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 			start := time.Now()
 			rw := newResponseWriter(w)
 
+			panicked := true
+			defer func() {
+				if panicked && logger != nil {
+					durationMs := time.Since(start).Milliseconds()
+					route := resolveRoute(r)
+					logger.Log(r.Context(), slog.LevelError, "request handled",
+						slog.String("method", r.Method),
+						slog.String("route", route),
+						slog.Int("status", http.StatusInternalServerError),
+						slog.Int64("duration_ms", durationMs),
+					)
+				}
+			}()
+
 			next.ServeHTTP(rw, r)
+			panicked = false
 
 			durationMs := time.Since(start).Milliseconds()
-
-			routePattern := chi.RouteContext(r.Context()).RoutePattern()
-			if routePattern == "" {
-				routePattern = r.URL.Path
-			}
+			route := resolveRoute(r)
 
 			status := rw.Status()
 			level := slog.LevelInfo
@@ -32,7 +41,7 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 			if logger != nil {
 				logger.Log(r.Context(), level, "request handled",
 					slog.String("method", r.Method),
-					slog.String("route", routePattern),
+					slog.String("route", route),
 					slog.Int("status", status),
 					slog.Int64("duration_ms", durationMs),
 				)

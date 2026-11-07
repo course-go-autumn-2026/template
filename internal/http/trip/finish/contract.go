@@ -13,8 +13,4 @@ type (
 	useCase interface {
 		Execute(ctx context.Context, id uuid.UUID) (*model.Trip, error)
 	}
-
-	metrics interface {
-		IncTripsCompleted(ctx context.Context)
-	}
 )

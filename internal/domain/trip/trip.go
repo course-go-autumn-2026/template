@@ -63,6 +63,30 @@ func New(userID, driverID uuid.UUID, start, end Coordinates, price int64, now ti
 	}, nil
 }
 
+func Restore(
+	id, userID, driverID uuid.UUID,
+	start, end Coordinates,
+	price int64,
+	status Status,
+	startedAt time.Time,
+	finishedAt *time.Time,
+	createdAt, updatedAt time.Time,
+) *Trip {
+	return &Trip{
+		ID:         id,
+		UserID:     userID,
+		DriverID:   driverID,
+		StartPoint: start,
+		EndPoint:   end,
+		Price:      price,
+		Status:     status,
+		StartedAt:  startedAt,
+		FinishedAt: finishedAt,
+		CreatedAt:  createdAt,
+		UpdatedAt:  updatedAt,
+	}
+}
+
 func (t *Trip) Finish(at time.Time) error {
 	if t.Status != StatusActive {
 		return ErrTripCompleted

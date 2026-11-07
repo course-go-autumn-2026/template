@@ -30,6 +30,8 @@ func TestCreateTripUseCase(t *testing.T) {
 
 		repo := NewMocktripRepository(ctrl)
 		tx := NewMocktxManager(ctrl)
+		logger := NewMocklogger(ctrl)
+		metrics := NewMockmetrics(ctrl)
 
 		tx.EXPECT().
 			Do(gomock.Any(), gomock.Any()).
@@ -45,7 +47,15 @@ func TestCreateTripUseCase(t *testing.T) {
 			AddStatusHistory(gomock.Any(), gomock.AssignableToTypeOf(model.StatusHistory{})).
 			Return(nil)
 
-		uc := create.New(repo, tx)
+		logger.EXPECT().
+			InfoContext(gomock.Any(), "trip created", gomock.Any()).
+			Times(1)
+
+		metrics.EXPECT().
+			IncTripsCreated(gomock.Any()).
+			Times(1)
+
+		uc := create.New(repo, tx, logger, metrics)
 		tripModel, err := uc.Execute(context.Background(), validReq)
 		if err != nil {
 			t.Fatalf("expected nil error, got: %v", err)
@@ -75,7 +85,7 @@ func TestCreateTripUseCase(t *testing.T) {
 			Save(gomock.Any(), gomock.Any()).
 			Return(domainTrip.ErrDriverBusy)
 
-		uc := create.New(repo, tx)
+		uc := create.New(repo, tx, nil, nil)
 		_, err := uc.Execute(context.Background(), validReq)
 
 		if !errors.Is(err, domainTrip.ErrDriverBusy) {
@@ -93,7 +103,7 @@ func TestCreateTripUseCase(t *testing.T) {
 		invalidReq := validReq
 		invalidReq.Price = -50
 
-		uc := create.New(repo, tx)
+		uc := create.New(repo, tx, nil, nil)
 		_, err := uc.Execute(context.Background(), invalidReq)
 
 		var valErr *domainTrip.ValidationError
@@ -121,7 +131,7 @@ func TestCreateTripUseCase(t *testing.T) {
 			Save(gomock.Any(), gomock.Any()).
 			Return(dbErr)
 
-		uc := create.New(repo, tx)
+		uc := create.New(repo, tx, nil, nil)
 		_, err := uc.Execute(context.Background(), validReq)
 
 		if !errors.Is(err, dbErr) {

@@ -42,11 +42,9 @@ func main() {
 	<-ctx.Done()
 	app.Logger().Info("shutting down gracefully")
 
-	shutdownTimeout := 10 * time.Second
-	if cfg.ShutdownTimeout != "" {
-		if d, err := time.ParseDuration(cfg.ShutdownTimeout); err == nil {
-			shutdownTimeout = d
-		}
+	shutdownTimeout := cfg.ShutdownTimeout
+	if shutdownTimeout <= 0 {
+		shutdownTimeout = 10 * time.Second
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)

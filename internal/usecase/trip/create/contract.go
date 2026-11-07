@@ -16,4 +16,12 @@ type (
 	txManager interface {
 		Do(ctx context.Context, fn func(ctx context.Context) error) error
 	}
+
+	logger interface {
+		InfoContext(ctx context.Context, msg string, args ...any)
+	}
+
+	metrics interface {
+		IncTripsCreated(ctx context.Context)
+	}
 )

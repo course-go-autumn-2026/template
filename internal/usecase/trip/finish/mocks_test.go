@@ -72,6 +72,21 @@ func (mr *MocktripRepositoryMockRecorder) Finish(ctx, id, finishedAt any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Finish", reflect.TypeOf((*MocktripRepository)(nil).Finish), ctx, id, finishedAt)
 }
 
+// GetByID mocks base method.
+func (m *MocktripRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Trip, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByID", ctx, id)
+	ret0, _ := ret[0].(*model.Trip)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByID indicates an expected call of GetByID.
+func (mr *MocktripRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MocktripRepository)(nil).GetByID), ctx, id)
+}
+
 // MocktxManager is a mock of txManager interface.
 type MocktxManager struct {
 	ctrl     *gomock.Controller
@@ -108,4 +123,81 @@ func (m *MocktxManager) Do(ctx context.Context, fn func(context.Context) error) 
 func (mr *MocktxManagerMockRecorder) Do(ctx, fn any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MocktxManager)(nil).Do), ctx, fn)
+}
+
+// Mocklogger is a mock of logger interface.
+type Mocklogger struct {
+	ctrl     *gomock.Controller
+	recorder *MockloggerMockRecorder
+	isgomock struct{}
+}
+
+// MockloggerMockRecorder is the mock recorder for Mocklogger.
+type MockloggerMockRecorder struct {
+	mock *Mocklogger
+}
+
+// NewMocklogger creates a new mock instance.
+func NewMocklogger(ctrl *gomock.Controller) *Mocklogger {
+	mock := &Mocklogger{ctrl: ctrl}
+	mock.recorder = &MockloggerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *Mocklogger) EXPECT() *MockloggerMockRecorder {
+	return m.recorder
+}
+
+// InfoContext mocks base method.
+func (m *Mocklogger) InfoContext(ctx context.Context, msg string, args ...any) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, msg}
+	for _, a := range args {
+		varargs = append(varargs, a)
+	}
+	m.ctrl.Call(m, "InfoContext", varargs...)
+}
+
+// InfoContext indicates an expected call of InfoContext.
+func (mr *MockloggerMockRecorder) InfoContext(ctx, msg any, args ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, msg}, args...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InfoContext", reflect.TypeOf((*Mocklogger)(nil).InfoContext), varargs...)
+}
+
+// Mockmetrics is a mock of metrics interface.
+type Mockmetrics struct {
+	ctrl     *gomock.Controller
+	recorder *MockmetricsMockRecorder
+	isgomock struct{}
+}
+
+// MockmetricsMockRecorder is the mock recorder for Mockmetrics.
+type MockmetricsMockRecorder struct {
+	mock *Mockmetrics
+}
+
+// NewMockmetrics creates a new mock instance.
+func NewMockmetrics(ctrl *gomock.Controller) *Mockmetrics {
+	mock := &Mockmetrics{ctrl: ctrl}
+	mock.recorder = &MockmetricsMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *Mockmetrics) EXPECT() *MockmetricsMockRecorder {
+	return m.recorder
+}
+
+// IncTripsCompleted mocks base method.
+func (m *Mockmetrics) IncTripsCompleted(ctx context.Context) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "IncTripsCompleted", ctx)
+}
+
+// IncTripsCompleted indicates an expected call of IncTripsCompleted.
+func (mr *MockmetricsMockRecorder) IncTripsCompleted(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncTripsCompleted", reflect.TypeOf((*Mockmetrics)(nil).IncTripsCompleted), ctx)
 }

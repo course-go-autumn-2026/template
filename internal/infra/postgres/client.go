@@ -2,44 +2,81 @@ package postgres
 
 import (
 	"context"
-	"strconv"
-	"time"
+	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/exaring/otelpgx"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/XrystikLK/template/internal/config"
 )
 
+type dbTracer struct {
+	*otelpgx.Tracer
+}
+
+func (t *dbTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+	ctx = t.Tracer.TraceQueryStart(ctx, conn, data)
+	span := trace.SpanFromContext(ctx)
+	if span.IsRecording() {
+		collection := extractCollection(data.SQL)
+		if collection != "" {
+			span.SetAttributes(attribute.String("db.collection.name", collection))
+		}
+	}
+	return ctx
+}
+
+func (t *dbTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
+	t.Tracer.TraceQueryEnd(ctx, conn, data)
+	span := trace.SpanFromContext(ctx)
+	if span.IsRecording() && data.Err != nil && !errors.Is(data.Err, pgx.ErrNoRows) {
+		span.SetStatus(codes.Error, data.Err.Error())
+		span.SetAttributes(attribute.String("error.type", "internal_error"))
+	}
+}
+
+func extractCollection(sql string) string {
+	lower := strings.ToLower(sql)
+	if strings.Contains(lower, "trip_status_history") {
+		return "trip_status_history"
+	}
+	if strings.Contains(lower, "trips") {
+		return "trips"
+	}
+	return ""
+}
+
 func NewPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка парсинга DATABASE_URL: %w", err)
 	}
 
-	poolCfg.ConnConfig.Tracer = otelpgx.NewTracer()
+	tracer := otelpgx.NewTracer(otelpgx.WithMetricOperationName(otelpgx.SQLOperationName))
+	poolCfg.ConnConfig.Tracer = &dbTracer{Tracer: tracer}
 
-	if maxConns, err := strconv.ParseInt(cfg.DatabaseMaxConns, 10, 32); err == nil && maxConns > 0 {
-		poolCfg.MaxConns = int32(maxConns)
-	}
-	if minConns, err := strconv.ParseInt(cfg.DatabaseMinConns, 10, 32); err == nil && minConns > 0 {
-		poolCfg.MinConns = int32(minConns)
-	}
-	if maxLifetime, err := time.ParseDuration(cfg.DatabaseMaxConnLifetime); err == nil {
-		poolCfg.MaxConnLifetime = maxLifetime
-	}
-	if connTimeout, err := time.ParseDuration(cfg.DatabaseConnectTimeout); err == nil {
-		poolCfg.ConnConfig.ConnectTimeout = connTimeout
-	}
+	poolCfg.MaxConns = cfg.DatabaseMaxConns
+	poolCfg.MinConns = cfg.DatabaseMinConns
+	poolCfg.MaxConnLifetime = cfg.DatabaseMaxConnLifetime
+	poolCfg.ConnConfig.ConnectTimeout = cfg.DatabaseConnectTimeout
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка создания пула соединений: %w", err)
 	}
 
-	if err := pool.Ping(ctx); err != nil {
+	pingCtx, cancel := context.WithTimeout(ctx, cfg.DatabaseConnectTimeout)
+	defer cancel()
+
+	if err := pool.Ping(pingCtx); err != nil {
 		pool.Close()
-		return nil, err
+		return nil, fmt.Errorf("база данных недоступна: %w", err)
 	}
 
 	return pool, nil

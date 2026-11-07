@@ -106,3 +106,80 @@ func (mr *MocktxManagerMockRecorder) Do(ctx, fn any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MocktxManager)(nil).Do), ctx, fn)
 }
+
+// Mocklogger is a mock of logger interface.
+type Mocklogger struct {
+	ctrl     *gomock.Controller
+	recorder *MockloggerMockRecorder
+	isgomock struct{}
+}
+
+// MockloggerMockRecorder is the mock recorder for Mocklogger.
+type MockloggerMockRecorder struct {
+	mock *Mocklogger
+}
+
+// NewMocklogger creates a new mock instance.
+func NewMocklogger(ctrl *gomock.Controller) *Mocklogger {
+	mock := &Mocklogger{ctrl: ctrl}
+	mock.recorder = &MockloggerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *Mocklogger) EXPECT() *MockloggerMockRecorder {
+	return m.recorder
+}
+
+// InfoContext mocks base method.
+func (m *Mocklogger) InfoContext(ctx context.Context, msg string, args ...any) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, msg}
+	for _, a := range args {
+		varargs = append(varargs, a)
+	}
+	m.ctrl.Call(m, "InfoContext", varargs...)
+}
+
+// InfoContext indicates an expected call of InfoContext.
+func (mr *MockloggerMockRecorder) InfoContext(ctx, msg any, args ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, msg}, args...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InfoContext", reflect.TypeOf((*Mocklogger)(nil).InfoContext), varargs...)
+}
+
+// Mockmetrics is a mock of metrics interface.
+type Mockmetrics struct {
+	ctrl     *gomock.Controller
+	recorder *MockmetricsMockRecorder
+	isgomock struct{}
+}
+
+// MockmetricsMockRecorder is the mock recorder for Mockmetrics.
+type MockmetricsMockRecorder struct {
+	mock *Mockmetrics
+}
+
+// NewMockmetrics creates a new mock instance.
+func NewMockmetrics(ctrl *gomock.Controller) *Mockmetrics {
+	mock := &Mockmetrics{ctrl: ctrl}
+	mock.recorder = &MockmetricsMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *Mockmetrics) EXPECT() *MockmetricsMockRecorder {
+	return m.recorder
+}
+
+// IncTripsCreated mocks base method.
+func (m *Mockmetrics) IncTripsCreated(ctx context.Context) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "IncTripsCreated", ctx)
+}
+
+// IncTripsCreated indicates an expected call of IncTripsCreated.
+func (mr *MockmetricsMockRecorder) IncTripsCreated(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncTripsCreated", reflect.TypeOf((*Mockmetrics)(nil).IncTripsCreated), ctx)
+}

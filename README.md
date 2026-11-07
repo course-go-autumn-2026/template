@@ -30,6 +30,10 @@ make run
 | Переменная | По умолчанию | Описание |
 |---|---|---|
 | `HTTP_ADDR` | `:8080` | Адрес и порт HTTP-сервера |
+| `HTTP_READ_TIMEOUT` | `5s` | Таймаут на чтение запроса целиком |
+| `HTTP_READ_HEADER_TIMEOUT` | `2s` | Таймаут на чтение заголовков запроса |
+| `HTTP_WRITE_TIMEOUT` | `5s` | Таймаут на запись ответа |
+| `HTTP_IDLE_TIMEOUT` | `30s` | Таймаут простоя keep-alive соединения |
 | `LOG_LEVEL` | `info` | Уровень логирования: `debug`, `info`, `warn`, `error` |
 | `SHUTDOWN_TIMEOUT` | `10s` | Бюджет времени на graceful shutdown |
 | `DATABASE_URL` | обязательная | DSN строка подключения к PostgreSQL |
@@ -40,9 +44,9 @@ make run
 | `DATABASE_QUERY_TIMEOUT` | `3s` | Таймаут на выполнение одного SQL-запроса |
 | `OTEL_SERVICE_NAME` | `trip-service` | Имя сервиса для телеметрии |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:22318` | Адрес OTLP-приемника телеметрии |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | Протокол экспорта OTLP |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | Протокол экспорта OTLP: `grpc`, `http/protobuf`, `http/json` |
 | `OTEL_RESOURCE_ATTRIBUTES` | `service.namespace=tripgo...` | Дополнительные атрибуты ресурса OpenTelemetry |
-| `OTEL_TRACES_SAMPLER` | `parentbased_always_on` | Сэмплирование трейсов |
+| `OTEL_TRACES_SAMPLER` | `parentbased_always_on` | Сэмплирование трейсов: `always_on`, `always_off`, `traceidratio`, `parentbased_always_on`, `parentbased_always_off`, `parentbased_traceidratio` |
 
 ---
 
@@ -96,8 +100,8 @@ make run
 
 ### Где объявлены интерфейсы и почему
 Интерфейсы объявляются на стороне потребителя в `contract.go`:
-* `usecase/trip/create/contract.go` объявляет `tripRepository` и `txManager`.
-* `http/trip/create/contract.go` объявляет `useCase` и `metrics`.
+* `usecase/trip/create/contract.go` объявляет `tripRepository`, `txManager`, `logger` и `metrics`.
+* `http/trip/create/contract.go` объявляет `useCase`.
 * `http/server.go` объявляет `pinger` для ручки `/ready`.
 
 **Почему интерфейсы там:**
@@ -106,7 +110,7 @@ make run
 3. **Подготовка к gRPC (лабораторная работа 4):** при добавлении второго транспорта создается пакет `internal/grpc/` со своими контрактами к тем же юзкейсам. Домен и юзкейсы при этом не меняются.
 
 ### Наблюдаемость (Observability)
-* **Логи (`slog`):** вывод в stdout в формате JSON. Каждая запись содержит `trace_id` и `span_id` через `TraceHandler`. В middleware пишется одна запись по завершении HTTP-запроса (`method`, `route`, `status`, `duration_ms`). Бизнес-события логируются отдельно в хендлерах с указанием `trip_id`.
+* **Логи (`slog`):** вывод в stdout в формате JSON. Каждая запись содержит `trace_id` и `span_id` через `TraceHandler`. В middleware пишется одна запись по завершении HTTP-запроса (`method`, `route`, `status`, `duration_ms`). Бизнес-события логируются в юзкейсах с указанием `trip_id` после успешного коммита транзакции.
 * **Трейсы (OTel):** Корневой спан на входящий HTTP-запрос `{method} {http.route}` создается в middleware `Tracing`. Запросы к БД инструментируются на уровне пула через `otelpgx`.
 * **Метрики (Prometheus):** `http.server.request.duration`, `http.server.active_requests`, `tripgo.trips.created`, `tripgo.trips.completed`. В атрибут `http.route` пишется строго шаблон маршрута (например, `/api/v1/trips/{tripId}`), а не URL с UUID, чтобы не раздувать кардинальность в Prometheus.
 * **Middleware `Recover`:** перехватывает паники, логирует их со стектрейсом и возвращает клиенту 500 `internal_error`, не роняя сервис.
@@ -147,11 +151,6 @@ WHERE id = $2 AND status = 'active'
 RETURNING id, user_id, driver_id, start_latitude, start_longitude, end_latitude, end_longitude, price, status, started_at, finished_at, created_at, updated_at;
 ```
 Если несколько параллельных запросов пытаются завершить одну поездку, строку обновит только один из них. Если затронуто 0 строк, репозиторий проверяет причину: если поездка уже завершена, возвращается `409 trip_completed`, если не найдена — `404 trip_not_found`.
-
-### 5. Ручки мониторинга
-* `/health` проверяет жизнеспособность процесса HTTP-сервера и возвращает 200 OK. Ручка намеренно не опрашивает базу данных, чтобы временная недоступность БД не приводила к аварийному перезапуску контейнера оркестратором.
-* `/ready` проверяет готовность сервиса принимать пользовательский трафик через `pool.Ping(ctx)`. При недоступности базы возвращается 503 Service Unavailable, при доступности — 200 OK.
-Ветка `homework/NN` от `main`, pull request в `main` своего форка, ССЫЛКУ НИКУДА СКИДЫВАТЬ НЕ НУЖНО, ревьюер сам найдет ее внутри вашего форка. Подробно — в `grading.md` репозитория курса.
 
 ### 5. Ручки мониторинга
 * `/health` проверяет жизнеспособность процесса HTTP-сервера и возвращает 200 OK. Ручка намеренно не опрашивает базу данных, чтобы временная недоступность БД не приводила к аварийному перезапуску контейнера оркестратором.

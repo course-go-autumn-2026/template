@@ -49,6 +49,21 @@ func parseResourceAttributes(raw string) []attribute.KeyValue {
 	return attrs
 }
 
+func selectSampler(samplerType string) sdktrace.Sampler {
+	switch strings.ToLower(strings.TrimSpace(samplerType)) {
+	case "always_on":
+		return sdktrace.AlwaysSample()
+	case "always_off":
+		return sdktrace.NeverSample()
+	case "parentbased_always_off":
+		return sdktrace.ParentBased(sdktrace.NeverSample())
+	case "parentbased_always_on", "":
+		return sdktrace.ParentBased(sdktrace.AlwaysSample())
+	default:
+		return sdktrace.ParentBased(sdktrace.AlwaysSample())
+	}
+}
+
 func Setup(ctx context.Context, cfg *config.Config) (*Telemetry, error) {
 	serviceName := cfg.OtelServiceName
 	if serviceName == "" {
@@ -85,17 +100,20 @@ func Setup(ctx context.Context, cfg *config.Config) (*Telemetry, error) {
 
 	endpoint := cfg.OtelExporterOtlpEndpoint
 	if endpoint != "" {
+		isInsecure := strings.HasPrefix(endpoint, "http://")
 		host := strings.TrimPrefix(endpoint, "http://")
 		host = strings.TrimPrefix(host, "https://")
 		opts := []otlptracehttp.Option{
 			otlptracehttp.WithEndpoint(host),
-			otlptracehttp.WithInsecure(),
+		}
+		if isInsecure {
+			opts = append(opts, otlptracehttp.WithInsecure())
 		}
 		traceExporter, err := otlptracehttp.New(ctx, opts...)
 		if err == nil {
 			bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
 			tracerProvider = sdktrace.NewTracerProvider(
-				sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.AlwaysSample())),
+				sdktrace.WithSampler(selectSampler(cfg.OtelTracesSampler)),
 				sdktrace.WithResource(res),
 				sdktrace.WithSpanProcessor(bsp),
 			)
@@ -105,7 +123,9 @@ func Setup(ctx context.Context, cfg *config.Config) (*Telemetry, error) {
 
 		metricOpts := []otlpmetrichttp.Option{
 			otlpmetrichttp.WithEndpoint(host),
-			otlpmetrichttp.WithInsecure(),
+		}
+		if isInsecure {
+			metricOpts = append(metricOpts, otlpmetrichttp.WithInsecure())
 		}
 		metricExporter, err := otlpmetrichttp.New(ctx, metricOpts...)
 		if err == nil {

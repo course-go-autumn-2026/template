@@ -21,12 +21,16 @@ type Request struct {
 type UseCase struct {
 	repo      tripRepository
 	txManager txManager
+	logger    logger
+	metrics   metrics
 }
 
-func New(repo tripRepository, txManager txManager) *UseCase {
+func New(repo tripRepository, txManager txManager, logger logger, metrics metrics) *UseCase {
 	return &UseCase{
 		repo:      repo,
 		txManager: txManager,
+		logger:    logger,
+		metrics:   metrics,
 	}
 }
 
@@ -73,6 +77,13 @@ func (uc *UseCase) Execute(ctx context.Context, req Request) (*model.Trip, error
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if uc.logger != nil {
+		uc.logger.InfoContext(ctx, "trip created", "trip_id", tripModel.ID.String())
+	}
+	if uc.metrics != nil {
+		uc.metrics.IncTripsCreated(ctx)
 	}
 
 	return &tripModel, nil

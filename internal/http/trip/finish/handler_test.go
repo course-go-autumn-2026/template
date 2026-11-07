@@ -35,7 +35,7 @@ func TestFinishTripHandler(t *testing.T) {
 			Execute(gomock.Any(), tripID).
 			Return(returnedModel, nil)
 
-		h := finishHandler.New(mockUC, nil, nil)
+		h := finishHandler.New(mockUC)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/trips/"+tripID.String()+"/finish", nil)
 		rec := httptest.NewRecorder()
@@ -56,7 +56,7 @@ func TestFinishTripHandler(t *testing.T) {
 			Execute(gomock.Any(), tripID).
 			Return(nil, domainTrip.ErrTripCompleted)
 
-		h := finishHandler.New(mockUC, nil, nil)
+		h := finishHandler.New(mockUC)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/trips/"+tripID.String()+"/finish", nil)
 		rec := httptest.NewRecorder()
@@ -68,7 +68,7 @@ func TestFinishTripHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("not found", func(t *testing.T) {
+	t.Run("trip not found", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
@@ -77,7 +77,7 @@ func TestFinishTripHandler(t *testing.T) {
 			Execute(gomock.Any(), tripID).
 			Return(nil, domainTrip.ErrTripNotFound)
 
-		h := finishHandler.New(mockUC, nil, nil)
+		h := finishHandler.New(mockUC)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/trips/"+tripID.String()+"/finish", nil)
 		rec := httptest.NewRecorder()
@@ -98,7 +98,7 @@ func TestFinishTripHandler(t *testing.T) {
 			Execute(gomock.Any(), tripID).
 			Return(nil, errors.New("db error"))
 
-		h := finishHandler.New(mockUC, nil, nil)
+		h := finishHandler.New(mockUC)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/trips/"+tripID.String()+"/finish", nil)
 		rec := httptest.NewRecorder()

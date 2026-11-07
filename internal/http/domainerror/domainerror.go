@@ -4,7 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	domainTrip "github.com/XrystikLK/template/internal/domain/trip"
 	api "github.com/XrystikLK/template/internal/generated"
@@ -74,6 +79,19 @@ func Write(w http.ResponseWriter, r *http.Request, err error) {
 	if r != nil {
 		path := r.URL.Path
 		body.Instance = &path
+
+		if status >= http.StatusInternalServerError {
+			slog.ErrorContext(r.Context(), "internal server error",
+				slog.String("error", err.Error()),
+				slog.String("path", path),
+			)
+
+			span := trace.SpanFromContext(r.Context())
+			if span.IsRecording() {
+				span.SetStatus(codes.Error, err.Error())
+				span.SetAttributes(attribute.String("error.type", "internal_error"))
+			}
+		}
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)

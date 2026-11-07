@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -18,7 +17,8 @@ func Tracing(tracer trace.Tracer) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 
-			initialName := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+			initialRoute := resolveRoute(r)
+			initialName := fmt.Sprintf("%s %s", r.Method, initialRoute)
 			ctx, span := tracer.Start(ctx, initialName,
 				trace.WithSpanKind(trace.SpanKindServer),
 			)
@@ -27,13 +27,25 @@ func Tracing(tracer trace.Tracer) func(http.Handler) http.Handler {
 			r = r.WithContext(ctx)
 			rw := newResponseWriter(w)
 
+			panicked := true
+			defer func() {
+				if panicked {
+					route := resolveRoute(r)
+					span.SetName(fmt.Sprintf("%s %s", r.Method, route))
+					span.SetAttributes(
+						semconv.HTTPRequestMethodKey.String(r.Method),
+						semconv.HTTPResponseStatusCodeKey.Int(http.StatusInternalServerError),
+						attribute.String("http.route", route),
+						attribute.String("error.type", "internal_error"),
+					)
+					span.SetStatus(codes.Error, "internal_error")
+				}
+			}()
+
 			next.ServeHTTP(rw, r)
+			panicked = false
 
-			routePattern := chi.RouteContext(r.Context()).RoutePattern()
-			if routePattern == "" {
-				routePattern = r.URL.Path
-			}
-
+			routePattern := resolveRoute(r)
 			span.SetName(fmt.Sprintf("%s %s", r.Method, routePattern))
 			span.SetAttributes(
 				semconv.HTTPRequestMethodKey.String(r.Method),

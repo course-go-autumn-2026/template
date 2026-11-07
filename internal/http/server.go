@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	api "github.com/XrystikLK/template/internal/generated"
 	createHandler "github.com/XrystikLK/template/internal/http/trip/create"
@@ -21,6 +22,7 @@ type Server struct {
 	getHandler    *getHandler.Handler
 	finishHandler *finishHandler.Handler
 	pinger        pinger
+	pingTimeout   time.Duration
 }
 
 func NewServer(
@@ -28,12 +30,17 @@ func NewServer(
 	getH *getHandler.Handler,
 	finishH *finishHandler.Handler,
 	pinger pinger,
+	pingTimeout time.Duration,
 ) *Server {
+	if pingTimeout <= 0 {
+		pingTimeout = 2 * time.Second
+	}
 	return &Server{
 		createHandler: createH,
 		getHandler:    getH,
 		finishHandler: finishH,
 		pinger:        pinger,
+		pingTimeout:   pingTimeout,
 	}
 }
 
@@ -58,7 +65,9 @@ func (s *Server) Health(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) Ready(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if s.pinger != nil {
-		if err := s.pinger.Ping(r.Context()); err != nil {
+		pingCtx, cancel := context.WithTimeout(r.Context(), s.pingTimeout)
+		defer cancel()
+		if err := s.pinger.Ping(pingCtx); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(api.HealthResponse{Status: api.Unavailable})
 			return

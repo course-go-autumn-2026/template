@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 )
 
 type ServerMetrics interface {
@@ -23,22 +21,25 @@ func Metrics(m ServerMetrics) func(http.Handler) http.Handler {
 			}
 
 			start := time.Now()
-			routePattern := chi.RouteContext(r.Context()).RoutePattern()
-			if routePattern == "" {
-				routePattern = r.URL.Path
-			}
+			route := resolveRoute(r)
 
-			m.AddActiveRequests(r.Context(), 1, r.Method, routePattern)
-			defer m.AddActiveRequests(r.Context(), -1, r.Method, routePattern)
+			m.AddActiveRequests(r.Context(), 1, r.Method, route)
+			defer m.AddActiveRequests(r.Context(), -1, r.Method, route)
 
 			rw := newResponseWriter(w)
+			panicked := true
+			defer func() {
+				if panicked {
+					finalRoute := resolveRoute(r)
+					durationSec := time.Since(start).Seconds()
+					m.RecordRequestDuration(r.Context(), durationSec, r.Method, finalRoute, "500")
+				}
+			}()
+
 			next.ServeHTTP(rw, r)
+			panicked = false
 
-			finalRoute := chi.RouteContext(r.Context()).RoutePattern()
-			if finalRoute == "" {
-				finalRoute = routePattern
-			}
-
+			finalRoute := resolveRoute(r)
 			durationSec := time.Since(start).Seconds()
 			m.RecordRequestDuration(r.Context(), durationSec, r.Method, finalRoute, strconv.Itoa(rw.Status()))
 		})

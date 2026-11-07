@@ -4,14 +4,15 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/XrystikLK/template/internal/config"
+	domainTrip "github.com/XrystikLK/template/internal/domain/trip"
 	api "github.com/XrystikLK/template/internal/generated"
 	httpTransport "github.com/XrystikLK/template/internal/http"
+	"github.com/XrystikLK/template/internal/http/domainerror"
 	"github.com/XrystikLK/template/internal/http/middleware"
 	createHandler "github.com/XrystikLK/template/internal/http/trip/create"
 	finishHandler "github.com/XrystikLK/template/internal/http/trip/finish"
@@ -46,25 +47,18 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 		return nil, err
 	}
 
-	queryTimeout := 3 * time.Second
-	if cfg.DatabaseQueryTimeout != "" {
-		if d, err := time.ParseDuration(cfg.DatabaseQueryTimeout); err == nil {
-			queryTimeout = d
-		}
-	}
-
 	txManager := transaction.NewManager(pool)
-	tripRepo := repoTrip.New(pool, queryTimeout)
+	tripRepo := repoTrip.New(pool, cfg.DatabaseQueryTimeout)
 
-	createUseCase := createUC.New(tripRepo, txManager)
+	createUseCase := createUC.New(tripRepo, txManager, logger, tel.Metrics)
 	getUseCase := getUC.New(tripRepo)
-	finishUseCase := finishUC.New(tripRepo, txManager)
+	finishUseCase := finishUC.New(tripRepo, txManager, logger, tel.Metrics)
 
-	createH := createHandler.New(createUseCase, logger, tel.Metrics)
+	createH := createHandler.New(createUseCase)
 	getH := getHandler.New(getUseCase)
-	finishH := finishHandler.New(finishUseCase, logger, tel.Metrics)
+	finishH := finishHandler.New(finishUseCase)
 
-	srv := httpTransport.NewServer(createH, getH, finishH, pool)
+	srv := httpTransport.NewServer(createH, getH, finishH, pool, cfg.DatabaseConnectTimeout)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recover(logger))
@@ -72,20 +66,23 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	r.Use(middleware.Logging(logger))
 	r.Use(middleware.Metrics(tel.Metrics))
 
-	api.HandlerFromMux(srv, r)
-
-	addr := cfg.HTTPAddr
-	if addr == "" {
-		addr = ":8080"
-	}
+	api.HandlerWithOptions(srv, api.ChiServerOptions{
+		BaseRouter: r,
+		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			domainerror.Write(w, r, &domainTrip.ValidationError{
+				Field:   "parameters",
+				Message: err.Error(),
+			})
+		},
+	})
 
 	httpServer := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.HTTPAddr,
 		Handler:           r,
-		ReadTimeout:       5 * time.Second,
-		ReadHeaderTimeout: 2 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		IdleTimeout:       30 * time.Second,
+		ReadTimeout:       cfg.HTTPReadTimeout,
+		ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
+		WriteTimeout:      cfg.HTTPWriteTimeout,
+		IdleTimeout:       cfg.HTTPIdleTimeout,
 	}
 
 	return &Container{

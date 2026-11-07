@@ -1,10 +1,17 @@
 package domainerror_test
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	domainTrip "github.com/XrystikLK/template/internal/domain/trip"
 	"github.com/XrystikLK/template/internal/http/domainerror"
@@ -77,4 +84,25 @@ func TestWrite(t *testing.T) {
 	if rec.Header().Get("Content-Type") != "application/problem+json" {
 		t.Fatalf("expected problem+json content type, got %s", rec.Header().Get("Content-Type"))
 	}
+}
+
+func TestWrite_500_LogsAndSetsSpan(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	tracer := tp.Tracer("test")
+
+	ctx, span := tracer.Start(context.Background(), "test-span")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/trips/123", nil).WithContext(ctx)
+
+	secretDBErr := errors.New("pq: password leaked")
+	domainerror.Write(rec, req, secretDBErr)
+	span.End()
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "password leaked")
+
+	spans := exporter.GetSpans()
+	require.NotEmpty(t, spans)
+	assert.Equal(t, codes.Error, spans[0].Status.Code)
 }

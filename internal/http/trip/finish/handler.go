@@ -2,7 +2,6 @@ package finish
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -11,16 +10,12 @@ import (
 )
 
 type Handler struct {
-	uc      useCase
-	logger  *slog.Logger
-	metrics metrics
+	uc useCase
 }
 
-func New(uc useCase, logger *slog.Logger, metrics metrics) *Handler {
+func New(uc useCase) *Handler {
 	return &Handler{
-		uc:      uc,
-		logger:  logger,
-		metrics: metrics,
+		uc: uc,
 	}
 }
 
@@ -29,13 +24,6 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request, tripID uuid.UUI
 	if err != nil {
 		domainerror.Write(w, r, err)
 		return
-	}
-
-	if h.logger != nil {
-		h.logger.InfoContext(r.Context(), "trip completed", slog.String("trip_id", tripModel.ID.String()))
-	}
-	if h.metrics != nil {
-		h.metrics.IncTripsCompleted(r.Context())
 	}
 
 	w.Header().Set("Content-Type", "application/json")
