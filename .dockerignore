@@ -1,0 +1,7 @@
+.git
+.idea
+.env*
+.tripgo
+bin
+coverage.out
+**/*_test.go
