@@ -17,6 +17,6 @@ func NewPGXBeginner(pool *pgxpool.Pool) *PGXBeginner {
 
 func (b *PGXBeginner) Begin(ctx context.Context) (Tx, error) {
 	return b.pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.Serializable,
+		IsoLevel: pgx.ReadCommitted, 
 	})
 }

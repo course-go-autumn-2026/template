@@ -40,11 +40,25 @@ func (h *Trips) CreateTrip(
 ) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
-	var request api.TripData
+	type createRequest struct {
+		UserID     *uuid.UUID `json:"user_id"`
+		DriverID   *uuid.UUID `json:"driver_id"`
+		StartPoint *struct {
+			Latitude  *float64 `json:"latitude"`
+			Longitude *float64 `json:"longitude"`
+		} `json:"start_point"`
+		EndPoint *struct {
+			Latitude  *float64 `json:"latitude"`
+			Longitude *float64 `json:"longitude"`
+		} `json:"end_point"`
+		Price *int64 `json:"price"`
+	}
+
+	var req createRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(&request); err != nil {
+	if err := decoder.Decode(&req); err != nil {
 		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
@@ -55,26 +69,28 @@ func (h *Trips) CreateTrip(
 		return
 	}
 
-	if !validCoordinates(request.StartPoint) ||
-		!validCoordinates(request.EndPoint) ||
-		request.Price <= 0 ||
-		request.UserId == uuid.Nil ||
-		request.DriverId == uuid.Nil {
+	if req.UserID == nil || req.DriverID == nil || req.Price == nil ||
+		req.StartPoint == nil || req.StartPoint.Latitude == nil || req.StartPoint.Longitude == nil ||
+		req.EndPoint == nil || req.EndPoint.Latitude == nil || req.EndPoint.Longitude == nil {
+		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Missing required fields")
+		return
+	}
+
+	if *req.Price < 0 ||
+		!validCoordinates(api.Coordinates{Latitude: *req.StartPoint.Latitude, Longitude: *req.StartPoint.Longitude}) ||
+		!validCoordinates(api.Coordinates{Latitude: *req.EndPoint.Latitude, Longitude: *req.EndPoint.Longitude}) {
 		WriteProblem(w, http.StatusBadRequest, "invalid_request", "Invalid trip data")
 		return
 	}
 
-	userID := uuid.UUID(request.UserId)
-	driverID := uuid.UUID(request.DriverId)
-
 	trip, err := h.service.Create(r.Context(), repository.TripData{
-		UserID:   userID,
-		DriverID: driverID,
-		StartLat: request.StartPoint.Latitude,
-		StartLon: request.StartPoint.Longitude,
-		EndLat:   request.EndPoint.Latitude,
-		EndLon:   request.EndPoint.Longitude,
-		Price:    request.Price,
+		UserID:   *req.UserID,
+		DriverID: *req.DriverID,
+		StartLat: *req.StartPoint.Latitude,
+		StartLon: *req.StartPoint.Longitude,
+		EndLat:   *req.EndPoint.Latitude,
+		EndLon:   *req.EndPoint.Longitude,
+		Price:    *req.Price,
 	})
 	if err != nil {
 		if errors.Is(err, repository.ErrDriverBusy) {
@@ -120,7 +136,7 @@ func (h *Trips) FinishTrip(
 ) {
 	id, err := uuid.Parse(tripID.String())
 	if err != nil {
-		WriteProblem(w, http.StatusBadRequest, "invalid_trip_id", "Invalid trip ID")
+		WriteProblem(w, http.StatusBadRequest, "invalid_trip_id", "Invalid Trip ID")
 		return
 	}
 
