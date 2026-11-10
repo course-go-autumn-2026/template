@@ -1,7 +1,7 @@
 # TripGo
 
 Сервис поездок для курса «Разработка микросервисов на Go».
-Текущая работа — лабораторная № 1: HTTP API и PostgreSQL.
+Текущая работа — лабораторная № 2: архитектура, качество кода и observability.
 
 ## Состояние
 
@@ -11,6 +11,39 @@
 работают через `pgx` и `squirrel`. Создание и завершение записывают поездку
 и историю в одной транзакции. Создание поддерживает `Idempotency-Key`.
 Сервис можно собрать и запустить в контейнере через `deploy/Dockerfile`.
+
+## Архитектура
+
+Код разложен по слоям с однонаправленными зависимостями: транспорт и
+репозитории знают про usecase, usecase знает про домен, домен не знает ни про
+кого. Правило закреплено `depguard` в `.golangci.yml`.
+
+- `internal/domain/trip/` — доменная модель поездки: статусы, переходы
+  (`Finish`), доменные ошибки (`ErrTripNotFound`, `ErrTripCompleted`,
+  `ErrDriverBusy`, `ErrIdempotencyConflict`) и `ValidationError`. Не импортирует
+  `net/http`, `chi`, `pgx`, `squirrel`, `otel`, `api`.
+- `internal/model/` — не заведён отдельно: единственная сущность, переходящая
+  между слоями, это сама `domain/trip.Trip` (следуя примеру лекции 06).
+- `internal/usecase/trip/{create,get,finish}/` — бизнес-сценарии. Каждый пакет
+  содержит `contract.go` с интерфейсами зависимостей (потребитель объявляет, что
+  ему нужно) и `usecase.go`. Зависимости приходят через конструктор и известны
+  только по интерфейсам.
+- `internal/http/trip/{create,get,finish}/` — транспорт: хендлеры, `contract.go`
+  (интерфейс usecase), `convert.go` (конвертация `api` ↔ `domain`).
+- `internal/http/domainerror/` — единый маппинг «доменная ошибка → HTTP-ответ»
+  (`Problem`), один `switch` по `errors.Is`/`errors.As`.
+- `internal/http/middleware/` — `Recover → Tracing → Logging → Metrics`.
+- `internal/repository/trip/` — репозиторий поездки и ключей идемпотентности,
+  `convert.go` (маппинг squirrel ↔ `domain.Trip`).
+- `internal/infra/postgres/` — пул pgx + `Executor`/`ExecutorFromContext`.
+- `internal/infra/postgres/transaction/` — менеджер транзакций (`TxManager`).
+- `internal/infra/telemetry/` — инициализация OpenTelemetry и `slog`.
+- `internal/container/` — единственное место, где создаются конкретные реализации
+  и связываются между собой (`pgxpool.New`, конструкторы репозиториев).
+
+Интерфейсы зависимостей объявлены в `contract.go` того пакета, который их
+использует (потребитель), неэкспортируемыми. Моки генерируются `mockgen` через
+`//go:generate` в `mocks_test.go` рядом с кодом.
 
 ## Требования
 
@@ -235,13 +268,13 @@ done
 
 ## Решения
 
-Менеджер транзакций находится в `internal/database/transaction.go`.
+Менеджер транзакций находится в `internal/infra/postgres/transaction/transaction.go`.
 `Do(ctx, fn)` открывает транзакцию и передаёт её в callback через приватный ключ
 контекста. `ExecutorFromContext(ctx, pool)` возвращает эту транзакцию, если она
 есть, или пул для вызова вне `Do`. Это позволяет репозиторию получать исполнителя
 без аргумента `pgx.Tx` в своих методах.
 
-Бизнес-операции находятся в `internal/trip/service.go` и используют интерфейс
+Бизнес-операции находятся в `internal/usecase/trip/{create,get,finish}/` и используют интерфейс
 `TxManager` с единственным методом `Do`. Создание внутри callback добавляет
 поездку и переход `NULL → active`, завершение — обновление и переход
 `active → completed`. Ошибка второй записи отменяет первую. UUID и время
@@ -334,7 +367,7 @@ docker image inspect trip-service:lab1 --format '{{.Size}}'
   выбор транзакции или пула, commit, отложенный rollback и вложенный `Do`.
 - `internal/trip/repository.go`: условие `status = 'active'` при завершении.
   Оно защищает время и историю от повторной записи конкурентным запросом.
-- `internal/httpapi/server.go`: `/health` проверяет живой процесс,
+- `internal/http/trip/...` + `internal/container/container.go`: `/health` проверяет живой процесс,
   `/ready` — соединение с БД. Ошибка БД влияет на готовность обслуживать запросы.
 
 ## Структура
