@@ -6,8 +6,9 @@ import (
 
 	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/murmyauuu/template/internal/config"
 	"go.opentelemetry.io/otel"
+
+	"github.com/murmyauuu/template/internal/config"
 )
 
 func Open(ctx context.Context, cfg config.Database) (*pgxpool.Pool, error) {

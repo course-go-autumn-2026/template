@@ -4,10 +4,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-
-	"github.com/go-chi/chi/v5"
 )
 
 func Metrics(meter metric.Meter) func(http.Handler) http.Handler {

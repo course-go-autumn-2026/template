@@ -15,18 +15,23 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		slog.Error("service stopped with an error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("invalid configuration", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("invalid configuration: %w", err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	c, err := container.New(ctx, cfg)
 	if err != nil {
-		slog.Error("failed to build container", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to build container: %w", err)
 	}
 	logger := c.Logger
 
@@ -51,8 +56,8 @@ func main() {
 		logger.Error("shutdown failed", "error", err)
 	}
 	if serveErr != nil {
-		logger.Error("service stopped with an error", "error", serveErr)
-		os.Exit(1)
+		return serveErr
 	}
 	logger.Info("service stopped")
+	return nil
 }

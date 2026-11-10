@@ -9,9 +9,15 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
 	"github.com/murmyauuu/template/api"
 	tripdomain "github.com/murmyauuu/template/internal/domain/trip"
 	uc "github.com/murmyauuu/template/internal/usecase/trip/create"
+)
+
+const (
+	latitudeKey  = "latitude"
+	longitudeKey = "longitude"
 )
 
 type fakeUsecase struct {
@@ -31,8 +37,8 @@ func TestHandlerCreateSuccess(t *testing.T) {
 	body := map[string]any{
 		"user_id":     uuid.New().String(),
 		"driver_id":   uuid.New().String(),
-		"start_point": map[string]float64{"latitude": 1, "longitude": 2},
-		"end_point":   map[string]float64{"latitude": 3, "longitude": 4},
+		"start_point": map[string]float64{latitudeKey: 1, longitudeKey: 2},
+		"end_point":   map[string]float64{latitudeKey: 3, longitudeKey: 4},
 		"price":       100,
 	}
 	b, _ := json.Marshal(body)
@@ -62,8 +68,8 @@ func TestHandlerCreateDriverBusy(t *testing.T) {
 	body := map[string]any{
 		"user_id":     uuid.New().String(),
 		"driver_id":   uuid.New().String(),
-		"start_point": map[string]float64{"latitude": 1, "longitude": 2},
-		"end_point":   map[string]float64{"latitude": 3, "longitude": 4},
+		"start_point": map[string]float64{latitudeKey: 1, longitudeKey: 2},
+		"end_point":   map[string]float64{latitudeKey: 3, longitudeKey: 4},
 		"price":       100,
 	}
 	b, _ := json.Marshal(body)

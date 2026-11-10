@@ -6,14 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/murmyauuu/template/api"
-	"os"
-
 	"github.com/murmyauuu/template/internal/config"
 	httpx "github.com/murmyauuu/template/internal/http"
 	"github.com/murmyauuu/template/internal/http/middleware"
@@ -27,10 +29,6 @@ import (
 	uccreate "github.com/murmyauuu/template/internal/usecase/trip/create"
 	ucfinish "github.com/murmyauuu/template/internal/usecase/trip/finish"
 	ucget "github.com/murmyauuu/template/internal/usecase/trip/get"
-
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type Container struct {
@@ -54,7 +52,7 @@ func New(ctx context.Context, cfg config.Config) (*Container, error) {
 
 	pool, err := postgres.Open(ctx, cfg.Database)
 	if err != nil {
-		cleanup(ctx, shutdown)
+		_ = shutdown(ctx)
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
@@ -122,15 +120,19 @@ type server struct {
 func (s *server) CreateTrip(w http.ResponseWriter, r *http.Request, params api.CreateTripParams) {
 	s.create.CreateTrip(w, r, params)
 }
+
 func (s *server) GetTrip(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
 	s.get.GetTrip(w, r, tripID)
 }
+
 func (s *server) FinishTrip(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
 	s.finish.FinishTrip(w, r, tripID)
 }
+
 func (s *server) Health(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, "application/json", api.HealthResponse{Status: api.Ok})
 }
+
 func (s *server) Ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryTimeout)
 	defer cancel()
@@ -145,12 +147,7 @@ func (s *server) Ready(w http.ResponseWriter, r *http.Request) {
 func otelTracer() trace.Tracer {
 	return otel.Tracer("trip-service")
 }
+
 func otelMeter() metric.Meter {
 	return otel.Meter("trip-service")
-}
-
-func cleanup(ctx context.Context, shutdown func(context.Context) error) {
-	if shutdown != nil {
-		shutdown(ctx)
-	}
 }

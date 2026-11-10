@@ -3,11 +3,10 @@ package middleware
 import (
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-
-	"github.com/go-chi/chi/v5"
 )
 
 func Tracing(tracer trace.Tracer) func(http.Handler) http.Handler {

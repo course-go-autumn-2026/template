@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/murmyauuu/template/api"
+
 	tripdomain "github.com/murmyauuu/template/internal/domain/trip"
 )
 
@@ -26,7 +26,7 @@ func TestHandlerGetSuccess(t *testing.T) {
 	h := &Handler{Usecase: fu}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/trips/"+id.String(), nil)
 	rr := httptest.NewRecorder()
-	h.GetTrip(rr, req, api.TripId(id))
+	h.GetTrip(rr, req, id)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
@@ -38,7 +38,7 @@ func TestHandlerGetNotFound(t *testing.T) {
 	h := &Handler{Usecase: fu}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/trips/"+id.String(), nil)
 	rr := httptest.NewRecorder()
-	h.GetTrip(rr, req, api.TripId(id))
+	h.GetTrip(rr, req, id)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rr.Code)
 	}

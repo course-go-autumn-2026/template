@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/murmyauuu/template/api"
+
 	tripdomain "github.com/murmyauuu/template/internal/domain/trip"
 )
 
@@ -27,7 +27,7 @@ func TestHandlerFinishSuccess(t *testing.T) {
 	h := &Handler{Usecase: fu}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/trips/"+id.String()+"/finish", bytes.NewReader(nil))
 	rr := httptest.NewRecorder()
-	h.FinishTrip(rr, req, api.TripId(id))
+	h.FinishTrip(rr, req, id)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
@@ -39,7 +39,7 @@ func TestHandlerFinishCompleted(t *testing.T) {
 	h := &Handler{Usecase: fu}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/trips/"+id.String()+"/finish", bytes.NewReader(nil))
 	rr := httptest.NewRecorder()
-	h.FinishTrip(rr, req, api.TripId(id))
+	h.FinishTrip(rr, req, id)
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", rr.Code)
 	}

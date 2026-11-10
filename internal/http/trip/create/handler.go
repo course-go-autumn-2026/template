@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+
 	"github.com/murmyauuu/template/api"
 	domaintrip "github.com/murmyauuu/template/internal/domain/trip"
 	httpx "github.com/murmyauuu/template/internal/http"

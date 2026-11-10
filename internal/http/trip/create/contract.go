@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+
 	uc "github.com/murmyauuu/template/internal/usecase/trip/create"
 )
 

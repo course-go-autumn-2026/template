@@ -17,6 +17,8 @@ import (
 	"github.com/murmyauuu/template/internal/infra/postgres/transaction"
 )
 
+const idempotencyKeyColumn = "idempotency_key"
+
 type IdempotencyRepository struct {
 	pool    *pgxpool.Pool
 	timeout time.Duration
@@ -54,7 +56,7 @@ func (r *IdempotencyRepository) Replay(ctx context.Context, key uuid.UUID, hash 
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 	query, args, err := sq.Select("request_hash", "response").From("trip_idempotency").
-		Where(sq.Eq{"idempotency_key": key}).PlaceholderFormat(sq.Dollar).ToSql()
+		Where(sq.Eq{idempotencyKeyColumn: key}).PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
 		return domaintrip.Trip{}, fmt.Errorf("build replay idempotency query: %w", err)
 	}
@@ -80,7 +82,7 @@ func (r *IdempotencyRepository) Save(ctx context.Context, key uuid.UUID, value d
 		return fmt.Errorf("encode idempotency response: %w", err)
 	}
 	query, args, err := sq.Update("trip_idempotency").Set("trip_id", value.Id).Set("response", response).
-		Where(sq.Eq{"idempotency_key": key}).PlaceholderFormat(sq.Dollar).ToSql()
+		Where(sq.Eq{idempotencyKeyColumn: key}).PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
 		return fmt.Errorf("build save idempotency query: %w", err)
 	}
@@ -94,9 +96,9 @@ func (r *IdempotencyRepository) Prune(ctx context.Context, currentKey uuid.UUID)
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 	expired := sq.Select("idempotency_key").From("trip_idempotency").
-		Where("expires_at <= now()").Where(sq.NotEq{"idempotency_key": currentKey}).
+		Where("expires_at <= now()").Where(sq.NotEq{idempotencyKeyColumn: currentKey}).
 		Limit(100).Suffix("FOR UPDATE SKIP LOCKED")
-	query, args, err := sq.Delete("trip_idempotency").Where(sq.Expr("idempotency_key IN (?)", expired)).
+	query, args, err := sq.Delete("trip_idempotency").Where(sq.Expr(idempotencyKeyColumn+" IN (?)", expired)).
 		PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
 		return fmt.Errorf("build prune idempotency query: %w", err)

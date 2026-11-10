@@ -5,9 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"go.opentelemetry.io/otel/trace"
-
 	"github.com/go-chi/chi/v5"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {

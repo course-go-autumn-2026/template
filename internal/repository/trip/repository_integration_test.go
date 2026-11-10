@@ -63,7 +63,7 @@ func TestRepositoryCreateAndGet(t *testing.T) {
 
 	// cleanup
 	ctx := context.Background()
-	pool.Exec(ctx, "DELETE FROM trips WHERE id = $1", tr.Id)
+	_, _ = pool.Exec(ctx, "DELETE FROM trips WHERE id = $1", tr.Id)
 }
 
 func TestRepositoryFinish(t *testing.T) {
@@ -98,7 +98,7 @@ func TestRepositoryFinish(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	pool.Exec(ctx, "DELETE FROM trips WHERE id = $1", tr.Id)
+	_, _ = pool.Exec(ctx, "DELETE FROM trips WHERE id = $1", tr.Id)
 }
 
 func TestRepositoryTransactionRollback(t *testing.T) {

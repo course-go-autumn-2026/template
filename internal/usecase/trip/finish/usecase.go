@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 
