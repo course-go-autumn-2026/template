@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/murmyauuu/template/api"
-	"github.com/murmyauuu/template/internal/database"
+	"github.com/murmyauuu/template/internal/infra/postgres/transaction"
 )
 
 const tripColumns = "id, user_id, driver_id, start_latitude, start_longitude, end_latitude, end_longitude, price, status, started_at, finished_at"
@@ -37,7 +37,7 @@ func (r *Repository) Create(ctx context.Context, value api.Trip) (api.Trip, erro
 	if err != nil {
 		return api.Trip{}, fmt.Errorf("build create trip query: %w", err)
 	}
-	created, err := scanTrip(database.ExecutorFromContext(ctx, r.pool).QueryRow(ctx, query, args...))
+	created, err := scanTrip(transaction.ExecutorFromContext(ctx, r.pool).QueryRow(ctx, query, args...))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "trips_active_driver_uniq" {
@@ -56,7 +56,7 @@ func (r *Repository) Get(ctx context.Context, id uuid.UUID) (api.Trip, error) {
 	if err != nil {
 		return api.Trip{}, fmt.Errorf("build get trip query: %w", err)
 	}
-	value, err := scanTrip(database.ExecutorFromContext(ctx, r.pool).QueryRow(ctx, query, args...))
+	value, err := scanTrip(transaction.ExecutorFromContext(ctx, r.pool).QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return api.Trip{}, ErrTripNotFound
 	}
@@ -76,7 +76,7 @@ func (r *Repository) Finish(ctx context.Context, id uuid.UUID, finishedAt time.T
 	if err != nil {
 		return api.Trip{}, fmt.Errorf("build finish trip query: %w", err)
 	}
-	value, err := scanTrip(database.ExecutorFromContext(ctx, r.pool).QueryRow(ctx, query, args...))
+	value, err := scanTrip(transaction.ExecutorFromContext(ctx, r.pool).QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Условный UPDATE не различает отсутствующую и уже завершённую поездки.
 		if _, err := r.Get(ctx, id); err != nil {

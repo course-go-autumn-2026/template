@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/murmyauuu/template/api"
-	"github.com/murmyauuu/template/internal/database"
+	"github.com/murmyauuu/template/internal/infra/postgres/transaction"
 )
 
 type HistoryRepository struct {
@@ -30,7 +30,7 @@ func (r *HistoryRepository) Append(ctx context.Context, tripID uuid.UUID, from *
 	if err != nil {
 		return fmt.Errorf("build append trip history query: %w", err)
 	}
-	if _, err := database.ExecutorFromContext(ctx, r.pool).Exec(ctx, query, args...); err != nil {
+	if _, err := transaction.ExecutorFromContext(ctx, r.pool).Exec(ctx, query, args...); err != nil {
 		return fmt.Errorf("append trip history: %w", err)
 	}
 	return nil

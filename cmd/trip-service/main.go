@@ -12,8 +12,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/murmyauuu/template/internal/config"
-	"github.com/murmyauuu/template/internal/database"
 	"github.com/murmyauuu/template/internal/httpapi"
+	"github.com/murmyauuu/template/internal/infra/postgres"
+	"github.com/murmyauuu/template/internal/infra/postgres/transaction"
 	"github.com/murmyauuu/template/internal/trip"
 )
 
@@ -35,14 +36,14 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
-	pool, err := database.Open(ctx, cfg.Database)
+	pool, err := postgres.Open(ctx, cfg.Database)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	trips := trip.NewService(
 		trip.NewRepository(pool, cfg.Database.QueryTimeout),
 		trip.NewHistoryRepository(pool, cfg.Database.QueryTimeout),
-		database.NewTxManager(pool, cfg.Database.QueryTimeout),
+		transaction.NewTxManager(pool, cfg.Database.QueryTimeout),
 		trip.NewIdempotencyRepository(pool, cfg.Database.QueryTimeout),
 		cfg.IdempotencyTTL,
 	)

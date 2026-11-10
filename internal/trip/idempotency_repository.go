@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/murmyauuu/template/api"
-	"github.com/murmyauuu/template/internal/database"
+	"github.com/murmyauuu/template/internal/infra/postgres/transaction"
 )
 
 type IdempotencyRepository struct {
@@ -39,7 +39,7 @@ func (r *IdempotencyRepository) Claim(ctx context.Context, key uuid.UUID, hash [
 		return false, fmt.Errorf("build claim idempotency query: %w", err)
 	}
 	var claimed uuid.UUID
-	err = database.ExecutorFromContext(ctx, r.pool).QueryRow(ctx, query, args...).Scan(&claimed)
+	err = transaction.ExecutorFromContext(ctx, r.pool).QueryRow(ctx, query, args...).Scan(&claimed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// ON CONFLICT блокирует строку до конца транзакции даже при ложном WHERE.
 		return false, nil
@@ -59,7 +59,7 @@ func (r *IdempotencyRepository) Replay(ctx context.Context, key uuid.UUID, hash 
 		return api.Trip{}, fmt.Errorf("build replay idempotency query: %w", err)
 	}
 	var storedHash, response []byte
-	if err := database.ExecutorFromContext(ctx, r.pool).QueryRow(ctx, query, args...).Scan(&storedHash, &response); err != nil {
+	if err := transaction.ExecutorFromContext(ctx, r.pool).QueryRow(ctx, query, args...).Scan(&storedHash, &response); err != nil {
 		return api.Trip{}, fmt.Errorf("read idempotency response: %w", err)
 	}
 	if !bytes.Equal(storedHash, hash) {
@@ -84,7 +84,7 @@ func (r *IdempotencyRepository) Save(ctx context.Context, key uuid.UUID, value a
 	if err != nil {
 		return fmt.Errorf("build save idempotency query: %w", err)
 	}
-	if _, err := database.ExecutorFromContext(ctx, r.pool).Exec(ctx, query, args...); err != nil {
+	if _, err := transaction.ExecutorFromContext(ctx, r.pool).Exec(ctx, query, args...); err != nil {
 		return fmt.Errorf("save idempotency response: %w", err)
 	}
 	return nil
@@ -101,7 +101,7 @@ func (r *IdempotencyRepository) Prune(ctx context.Context, currentKey uuid.UUID)
 	if err != nil {
 		return fmt.Errorf("build prune idempotency query: %w", err)
 	}
-	if _, err := database.ExecutorFromContext(ctx, r.pool).Exec(ctx, query, args...); err != nil {
+	if _, err := transaction.ExecutorFromContext(ctx, r.pool).Exec(ctx, query, args...); err != nil {
 		return fmt.Errorf("prune expired idempotency keys: %w", err)
 	}
 	return nil
