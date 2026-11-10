@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"go.opentelemetry.io/otel/trace"
 )
 
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
@@ -33,14 +32,7 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 				slog.Int("status", rec.Status()),
 				slog.Int64("duration_ms", duration.Milliseconds()),
 			}
-			span := trace.SpanFromContext(r.Context())
-			sc := span.SpanContext()
-			if sc.HasTraceID() {
-				attrs = append(attrs, slog.String("trace_id", sc.TraceID().String()))
-			}
-			if sc.HasSpanID() {
-				attrs = append(attrs, slog.String("span_id", sc.SpanID().String()))
-			}
+			// trace_id и span_id добавляются traceHandler в telemetry, здесь не дублируем
 			if logger != nil {
 				logger.LogAttrs(r.Context(), level, "request handled", attrs...)
 			}
