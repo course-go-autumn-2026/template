@@ -7,6 +7,7 @@ import (
 	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/murmyauuu/template/internal/config"
 )
@@ -20,10 +21,10 @@ func Open(ctx context.Context, cfg config.Database) (*pgxpool.Pool, error) {
 	poolConfig.MinConns = cfg.MinConns
 	poolConfig.MaxConnLifetime = cfg.MaxConnLifetime
 	poolConfig.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
-	poolConfig.ConnConfig.Tracer = otelpgx.NewTracer(
+	poolConfig.ConnConfig.Tracer = newCollectionTracer(otelpgx.NewTracer(
 		otelpgx.WithTracerProvider(otel.GetTracerProvider()),
-		otelpgx.WithMeterProvider(otel.GetMeterProvider()),
-	)
+		otelpgx.WithMeterProvider(noop.NewMeterProvider()),
+	))
 
 	connectCtx, cancel := context.WithTimeout(ctx, cfg.ConnectTimeout)
 	defer cancel()
