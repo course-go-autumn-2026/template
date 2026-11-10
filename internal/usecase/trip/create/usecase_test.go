@@ -22,7 +22,7 @@ func TestCreateSuccess(t *testing.T) {
 	history := NewMockhistoryRepository(ctrl)
 	idem := NewMockidempotencyRepository(ctrl)
 
-	uc := create.New(repo, tx, history, idem, time.Hour)
+	uc := create.New(repo, tx, history, idem, time.Hour, nil)
 
 	in := create.Input{
 		UserId:     uuid.New(),
@@ -62,7 +62,7 @@ func TestCreateDriverBusy(t *testing.T) {
 	history := NewMockhistoryRepository(ctrl)
 	idem := NewMockidempotencyRepository(ctrl)
 
-	uc := create.New(repo, tx, history, idem, time.Hour)
+	uc := create.New(repo, tx, history, idem, time.Hour, nil)
 
 	in := create.Input{UserId: uuid.New(), DriverId: uuid.New(), Price: 10}
 
@@ -86,7 +86,7 @@ func TestCreateRepoError(t *testing.T) {
 	history := NewMockhistoryRepository(ctrl)
 	idem := NewMockidempotencyRepository(ctrl)
 
-	uc := create.New(repo, tx, history, idem, time.Hour)
+	uc := create.New(repo, tx, history, idem, time.Hour, nil)
 
 	in := create.Input{UserId: uuid.New(), DriverId: uuid.New(), Price: 10}
 
@@ -110,7 +110,7 @@ func TestCreateIdempotencyReplay(t *testing.T) {
 	history := NewMockhistoryRepository(ctrl)
 	idem := NewMockidempotencyRepository(ctrl)
 
-	uc := create.New(repo, tx, history, idem, time.Hour)
+	uc := create.New(repo, tx, history, idem, time.Hour, nil)
 
 	in := create.Input{UserId: uuid.New(), DriverId: uuid.New(), Price: 10}
 	key := uuid.New()
@@ -144,7 +144,7 @@ func TestCreateIdempotencyConflict(t *testing.T) {
 	history := NewMockhistoryRepository(ctrl)
 	idem := NewMockidempotencyRepository(ctrl)
 
-	uc := create.New(repo, tx, history, idem, time.Hour)
+	uc := create.New(repo, tx, history, idem, time.Hour, nil)
 
 	in := create.Input{UserId: uuid.New(), DriverId: uuid.New(), Price: 10}
 	key := uuid.New()
@@ -171,7 +171,7 @@ func TestCreateIdempotencyFresh(t *testing.T) {
 	history := NewMockhistoryRepository(ctrl)
 	idem := NewMockidempotencyRepository(ctrl)
 
-	uc := create.New(repo, tx, history, idem, time.Hour)
+	uc := create.New(repo, tx, history, idem, time.Hour, nil)
 
 	in := create.Input{UserId: uuid.New(), DriverId: uuid.New(), Price: 10}
 	key := uuid.New()

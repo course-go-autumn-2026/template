@@ -5,9 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 
 	domaintrip "github.com/murmyauuu/template/internal/domain/trip"
 )
@@ -31,10 +35,14 @@ type Usecase struct {
 	history        historyRepository
 	idempotency    idempotencyRepository
 	idempotencyTTL time.Duration
+	logger         *slog.Logger
+	created        metric.Int64Counter
 }
 
-func New(repo tripRepository, tx txManager, history historyRepository, idempotency idempotencyRepository, ttl time.Duration) *Usecase {
-	return &Usecase{repo: repo, tx: tx, history: history, idempotency: idempotency, idempotencyTTL: ttl}
+func New(repo tripRepository, tx txManager, history historyRepository, idempotency idempotencyRepository, ttl time.Duration, logger *slog.Logger) *Usecase {
+	meter := otel.Meter("trip-service")
+	created, _ := meter.Int64Counter("tripgo.trips.created")
+	return &Usecase{repo: repo, tx: tx, history: history, idempotency: idempotency, idempotencyTTL: ttl, logger: logger, created: created}
 }
 
 func (u *Usecase) Execute(ctx context.Context, in Input, key *uuid.UUID) (Output, error) {
@@ -80,6 +88,10 @@ func (u *Usecase) Execute(ctx context.Context, in Input, key *uuid.UUID) (Output
 		created, err = u.repo.Create(ctx, value)
 		if err != nil {
 			return err
+		}
+		u.created.Add(ctx, 1)
+		if u.logger != nil {
+			u.logger.InfoContext(ctx, "trip created", "trip_id", created.Id.String())
 		}
 		if err := u.history.Append(ctx, created.Id, nil, domaintrip.StatusActive, created.StartedAt); err != nil {
 			return err

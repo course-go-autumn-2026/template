@@ -20,7 +20,7 @@ func TestFinishSuccess(t *testing.T) {
 	tx := NewMocktxManager(ctrl)
 	history := NewMockhistoryRepository(ctrl)
 
-	uc := finish.New(repo, tx, history)
+	uc := finish.New(repo, tx, history, nil)
 
 	id := uuid.New()
 	finished := tripdomain.Trip{Id: id, Status: tripdomain.StatusCompleted}
@@ -47,7 +47,7 @@ func TestFinishAlreadyCompleted(t *testing.T) {
 	tx := NewMocktxManager(ctrl)
 	history := NewMockhistoryRepository(ctrl)
 
-	uc := finish.New(repo, tx, history)
+	uc := finish.New(repo, tx, history, nil)
 
 	id := uuid.New()
 	tx.EXPECT().Do(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, fn func(context.Context) error) error {
@@ -69,7 +69,7 @@ func TestFinishNotFound(t *testing.T) {
 	tx := NewMocktxManager(ctrl)
 	history := NewMockhistoryRepository(ctrl)
 
-	uc := finish.New(repo, tx, history)
+	uc := finish.New(repo, tx, history, nil)
 
 	id := uuid.New()
 	tx.EXPECT().Do(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, fn func(context.Context) error) error {

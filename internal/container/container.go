@@ -63,9 +63,9 @@ func New(ctx context.Context, cfg config.Config) (*Container, error) {
 	history := trip.NewHistoryRepository(pool, cfg.Database.QueryTimeout)
 	idempotency := trip.NewIdempotencyRepository(pool, cfg.Database.QueryTimeout)
 
-	createUC := uccreate.New(repo, tx, history, idempotency, cfg.IdempotencyTTL)
+	createUC := uccreate.New(repo, tx, history, idempotency, cfg.IdempotencyTTL, logger)
 	getUC := ucget.New(repo)
-	finishUC := ucfinish.New(repo, tx, history)
+	finishUC := ucfinish.New(repo, tx, history, logger)
 
 	createHandler := &tripcreate.Handler{Usecase: createUC, Logger: logger}
 	getHandler := &tripget.Handler{Usecase: getUC, Logger: logger}
