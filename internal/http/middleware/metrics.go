@@ -22,22 +22,26 @@ func Metrics(meter metric.Meter) func(http.Handler) http.Handler {
 	)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			rec := newStatusRecorder(w)
+			next.ServeHTTP(rec, r)
+
+			// Шаблон маршрута известен только после маршрутизации (next.ServeHTTP),
+			// поэтому читаем его здесь, а не до вызова обработчика.
 			route := r.URL.Path
 			if rc := chi.RouteContext(r.Context()); rc != nil {
 				if p := rc.RoutePattern(); p != "" {
 					route = p
 				}
 			}
-			attrs := []attribute.KeyValue{
+
+			activeAttrs := []attribute.KeyValue{
 				attribute.String("http.request.method", r.Method),
 				attribute.String("http.route", route),
 			}
-			active.Add(r.Context(), 1, metric.WithAttributes(attrs...))
-			defer active.Add(r.Context(), -1, metric.WithAttributes(attrs...))
+			active.Add(r.Context(), 1, metric.WithAttributes(activeAttrs...))
+			active.Add(r.Context(), -1, metric.WithAttributes(activeAttrs...))
 
-			start := time.Now()
-			rec := newStatusRecorder(w)
-			next.ServeHTTP(rec, r)
 			duration.Record(r.Context(), time.Since(start).Seconds(), metric.WithAttributes(
 				attribute.String("http.request.method", r.Method),
 				attribute.String("http.route", route),
