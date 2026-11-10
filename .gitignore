@@ -5,4 +5,8 @@
 # Сборка
 bin/
 
+# Отчёты локальных проверок
+coverage.out
+coverage.html
+
 .DS_Store

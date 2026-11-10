@@ -1,0 +1,13 @@
+*
+!go.mod
+!go.sum
+!api/
+!api/*.go
+!cmd/
+!cmd/trip-service/
+!cmd/trip-service/*.go
+!internal/
+!internal/**
+!deploy/
+!deploy/Dockerfile
+**/*_test.go
