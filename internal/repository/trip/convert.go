@@ -12,7 +12,7 @@ func scanTrip(row pgx.Row) (domaintrip.Trip, error) {
 	err := row.Scan(&value.Id, &value.UserId, &value.DriverId,
 		&value.StartPoint.Latitude, &value.StartPoint.Longitude,
 		&value.EndPoint.Latitude, &value.EndPoint.Longitude,
-		&value.Price, &status, &value.StartedAt, &value.FinishedAt, &value.LastPositionAt)
+		&value.Price, &status, &value.StartedAt, &value.FinishedAt)
 	if err != nil {
 		return domaintrip.Trip{}, err
 	}
@@ -21,10 +21,6 @@ func scanTrip(row pgx.Row) (domaintrip.Trip, error) {
 	if value.FinishedAt != nil {
 		finishedAt := value.FinishedAt.UTC()
 		value.FinishedAt = &finishedAt
-	}
-	if value.LastPositionAt != nil {
-		lastPos := value.LastPositionAt.UTC()
-		value.LastPositionAt = &lastPos
 	}
 	return value, nil
 }

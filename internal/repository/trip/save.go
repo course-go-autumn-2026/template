@@ -15,7 +15,7 @@ import (
 	"github.com/murmyauuu/template/internal/infra/postgres/transaction"
 )
 
-const tripColumns = "id, user_id, driver_id, start_latitude, start_longitude, end_latitude, end_longitude, price, status, started_at, finished_at, last_position_at"
+const tripColumns = "id, user_id, driver_id, start_latitude, start_longitude, end_latitude, end_longitude, price, status, started_at, finished_at"
 
 func (r *Repository) Create(ctx context.Context, value domaintrip.Trip) (domaintrip.Trip, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
