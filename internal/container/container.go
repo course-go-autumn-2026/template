@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	openapi_types "github.com/oapi-codegen/runtime/types"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -35,21 +34,22 @@ import (
 var _ api.ServerInterface = (*apiAdapter)(nil)
 
 type apiAdapter struct {
+	api.Unimplemented
 	create *httpcreate.Handler
 	get    *httpget.Handler
 	finish *httpfinish.Handler
 	pool   *pgxpool.Pool
 }
 
-func (a *apiAdapter) CreateTrip(w http.ResponseWriter, r *http.Request) {
-	a.create.ServeHTTP(w, r)
+func (a *apiAdapter) CreateTrip(w http.ResponseWriter, r *http.Request, params api.CreateTripParams) {
+	a.create.Handle(w, r, params)
 }
 
-func (a *apiAdapter) GetTrip(w http.ResponseWriter, r *http.Request, tripID openapi_types.UUID) {
+func (a *apiAdapter) GetTrip(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
 	a.get.Handle(w, r, tripID)
 }
 
-func (a *apiAdapter) FinishTrip(w http.ResponseWriter, r *http.Request, tripID openapi_types.UUID) {
+func (a *apiAdapter) FinishTrip(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
 	a.finish.Handle(w, r, tripID)
 }
 
@@ -57,7 +57,7 @@ func (a *apiAdapter) Health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(api.HealthResponse{
-		Status: api.HealthResponseStatusOk,
+		Status: "ok",
 	})
 }
 
@@ -69,7 +69,7 @@ func (a *apiAdapter) Ready(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(api.HealthResponse{
-			Status: api.HealthResponseStatusUnavailable,
+			Status: "unavailable",
 		})
 		return
 	}
@@ -77,7 +77,7 @@ func (a *apiAdapter) Ready(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(api.HealthResponse{
-		Status: api.HealthResponseStatusOk,
+		Status: "ok",
 	})
 }
 
@@ -92,12 +92,12 @@ type Container struct {
 func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	logger := telemetry.InitLogger(cfg.LogLevel)
 
-	tp, err := telemetry.InitTracer(ctx, "trip-service", cfg.OtelEndpoint)
+	tp, err := telemetry.InitTracer(ctx, "trip-service", cfg.OtelEndpoint, cfg.OtelProtocol, cfg.OtelTracesSampler)
 	if err != nil {
 		logger.Warn("tracer init warning", slog.String("error", err.Error()))
 	}
 
-	metrics, mp, err := telemetry.InitMetrics(ctx, "trip-service", cfg.OtelEndpoint)
+	metrics, mp, err := telemetry.InitMetrics(ctx, "trip-service", cfg.OtelEndpoint, cfg.OtelProtocol)
 	if err != nil {
 		logger.Warn("metrics init warning", slog.String("error", err.Error()))
 	}
@@ -108,6 +108,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 		MinConns:       cfg.DatabaseMinConns,
 		MaxConnLife:    cfg.DatabaseMaxConnLife,
 		ConnectTimeout: cfg.DatabaseConnectTimeout,
+		DBDurationHist: metrics.DBOperationDuration,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("postgres init: %w", err)
@@ -136,18 +137,10 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 	// Порядок п. 6.4: Recover -> Tracing -> Logging -> Metrics -> роутер
 	r.Use(httpmw.Recover(logger))
 	r.Use(func(next http.Handler) http.Handler {
-		return otelhttp.NewHandler(next, "http.server",
-			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
-				route := chi.RouteContext(r.Context()).RoutePattern()
-				if route == "" {
-					route = r.URL.Path
-				}
-				return fmt.Sprintf("%s %s", r.Method, route)
-			}),
-		)
+		return otelhttp.NewHandler(next, "http.server")
 	})
 	r.Use(httpmw.Logging(logger))
-	r.Use(httpmw.Metrics(metrics.HTTPRequestDuration, metrics.HTTPActiveRequests))
+	r.Use(httpmw.Metrics(r, metrics.HTTPRequestDuration, metrics.HTTPActiveRequests))
 
 	api.HandlerWithOptions(adapter, api.ChiServerOptions{
 		BaseRouter: r,

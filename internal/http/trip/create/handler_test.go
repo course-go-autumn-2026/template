@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/xotapy-main/courseGo/internal/domain/trip"
 	api "github.com/xotapy-main/courseGo/internal/generated"
@@ -21,7 +21,7 @@ import (
 	"github.com/xotapy-main/courseGo/internal/model"
 )
 
-func TestHandler_ServeHTTP(t *testing.T) {
+func TestHandler_Handle(t *testing.T) {
 	t.Parallel()
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 
@@ -52,7 +52,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/trips", bytes.NewReader(validBody))
 		rec := httptest.NewRecorder()
 
-		h.ServeHTTP(rec, req)
+		h.Handle(rec, req, api.CreateTripParams{})
 		require.Equal(t, http.StatusCreated, rec.Code)
 	})
 
@@ -65,7 +65,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/trips", bytes.NewReader([]byte(`{"unknown_field":123}`)))
 		rec := httptest.NewRecorder()
 
-		h.ServeHTTP(rec, req)
+		h.Handle(rec, req, api.CreateTripParams{})
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 		var prob api.Problem
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &prob))
@@ -82,7 +82,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/trips", bytes.NewReader(validBody))
 		rec := httptest.NewRecorder()
 
-		h.ServeHTTP(rec, req)
+		h.Handle(rec, req, api.CreateTripParams{})
 		require.Equal(t, http.StatusConflict, rec.Code)
 	})
 
@@ -96,7 +96,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/trips", bytes.NewReader(validBody))
 		rec := httptest.NewRecorder()
 
-		h.ServeHTTP(rec, req)
+		h.Handle(rec, req, api.CreateTripParams{})
 		require.Equal(t, http.StatusInternalServerError, rec.Code)
 		require.NotContains(t, rec.Body.String(), "secret sql failure")
 	})

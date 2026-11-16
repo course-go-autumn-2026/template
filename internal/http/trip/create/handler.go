@@ -27,8 +27,8 @@ func New(uc usecase, logger *slog.Logger, tripsCreated metric.Int64Counter) *Han
 	}
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var req api.CreateTripRequest
+func (h *Handler) Handle(w http.ResponseWriter, r *http.Request, _ api.CreateTripParams) {
+	var req api.TripData
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {

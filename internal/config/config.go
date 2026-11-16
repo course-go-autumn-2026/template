@@ -1,7 +1,7 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"strconv"
 	"time"
@@ -18,12 +18,14 @@ type Config struct {
 	DatabaseQueryTimeout   time.Duration
 	DatabaseMaxConnLife    time.Duration
 	OtelEndpoint           string
+	OtelProtocol           string
+	OtelTracesSampler      string
 }
 
 func Load() (*Config, error) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		return nil, fmt.Errorf("DATABASE_URL is required")
+		return nil, errors.New("DATABASE_URL is required")
 	}
 
 	shutdownTimeout, err := parseDurationEnv("SHUTDOWN_TIMEOUT", 10*time.Second)
@@ -67,6 +69,8 @@ func Load() (*Config, error) {
 		DatabaseQueryTimeout:   queryTimeout,
 		DatabaseMaxConnLife:    maxConnLife,
 		OtelEndpoint:           getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4318"),
+		OtelProtocol:           getEnv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"),
+		OtelTracesSampler:      getEnv("OTEL_TRACES_SAMPLER", "always_on"),
 	}, nil
 }
 

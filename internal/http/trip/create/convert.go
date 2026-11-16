@@ -8,7 +8,7 @@ import (
 	uccreate "github.com/xotapy-main/courseGo/internal/usecase/trip/create"
 )
 
-func toUsecaseRequest(req api.CreateTripRequest) uccreate.Request {
+func toUsecaseRequest(req api.TripData) uccreate.Request {
 	return uccreate.Request{
 		UserID:     uuid.UUID(req.UserId),
 		DriverID:   uuid.UUID(req.DriverId),
@@ -23,8 +23,8 @@ func ToAPITrip(t *model.Trip) api.Trip {
 		Id:             t.ID,
 		UserId:         t.UserID,
 		DriverId:       t.DriverID,
-		StartPoint:     api.Point{Latitude: t.StartPoint.Latitude, Longitude: t.StartPoint.Longitude},
-		EndPoint:       api.Point{Latitude: t.EndPoint.Latitude, Longitude: t.EndPoint.Longitude},
+		StartPoint:     api.Coordinates{Latitude: t.StartPoint.Latitude, Longitude: t.StartPoint.Longitude},
+		EndPoint:       api.Coordinates{Latitude: t.EndPoint.Latitude, Longitude: t.EndPoint.Longitude},
 		Price:          t.Price,
 		Status:         api.TripStatus(t.Status),
 		StartedAt:      t.StartedAt,

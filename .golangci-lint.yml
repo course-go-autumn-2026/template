@@ -1,0 +1,79 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - depguard
+    - errcheck
+    - forbidigo
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - gocyclo
+    - gosec
+    - govet
+    - ineffassign
+    - makezero
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+  settings:
+    depguard:
+      rules:
+        domain:
+          files:
+            - "**/internal/domain/**"
+          deny:
+            - pkg: "net/http"
+              desc: "domain must not import net/http"
+            - pkg: "github.com/go-chi/chi/**"
+              desc: "domain must not import chi"
+            - pkg: "github.com/jackc/pgx/**"
+              desc: "domain must not import pgx"
+            - pkg: "github.com/Masterminds/squirrel"
+              desc: "domain must not import squirrel"
+            - pkg: "go.opentelemetry.io/otel/**"
+              desc: "domain must not import otel"
+            - pkg: "github.com/xotapy-main/courseGo/internal/generated"
+              desc: "domain must not import generated api"
+        usecase:
+          files:
+            - "**/internal/usecase/**"
+          deny:
+            - pkg: "net/http"
+              desc: "usecase must not import net/http"
+            - pkg: "github.com/go-chi/chi/**"
+              desc: "usecase must not import chi"
+            - pkg: "github.com/jackc/pgx/**"
+              desc: "usecase must not import pgx"
+            - pkg: "github.com/Masterminds/squirrel"
+              desc: "usecase must not import squirrel"
+            - pkg: "github.com/xotapy-main/courseGo/internal/generated"
+              desc: "usecase must not import generated api"
+        http:
+          files:
+            - "**/internal/http/**"
+          deny:
+            - pkg: "github.com/xotapy-main/courseGo/internal/repository/**"
+              desc: "http must not import repository directly"
+            - pkg: "github.com/xotapy-main/courseGo/internal/infra/**"
+              desc: "http must not import infra directly"
+
+formatters:
+  enable:
+    - gofumpt
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/xotapy-main/courseGo)

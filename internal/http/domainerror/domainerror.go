@@ -12,51 +12,56 @@ import (
 func Problem(err error, instance string) (int, api.Problem) {
 	var valErr *trip.ValidationError
 	if errors.As(err, &valErr) {
+		detail := valErr.Error()
 		return http.StatusBadRequest, api.Problem{
 			Type:     "https://tripgo.example/problems/invalid-request",
 			Title:    "Invalid request",
-			Status:   http.StatusBadRequest,
-			Detail:   valErr.Error(),
-			Instance: instance,
+			Status:   int32(http.StatusBadRequest),
+			Detail:   &detail,
+			Instance: &instance,
 			Code:     "invalid_request",
 		}
 	}
 
 	switch {
 	case errors.Is(err, trip.ErrTripNotFound):
+		detail := "Trip not found"
 		return http.StatusNotFound, api.Problem{
 			Type:     "https://tripgo.example/problems/trip-not-found",
 			Title:    "Trip not found",
-			Status:   http.StatusNotFound,
-			Detail:   "Trip not found",
-			Instance: instance,
+			Status:   int32(http.StatusNotFound),
+			Detail:   &detail,
+			Instance: &instance,
 			Code:     "trip_not_found",
 		}
 	case errors.Is(err, trip.ErrTripCompleted):
+		detail := "Trip is already completed"
 		return http.StatusConflict, api.Problem{
 			Type:     "https://tripgo.example/problems/trip-completed",
 			Title:    "Trip completed",
-			Status:   http.StatusConflict,
-			Detail:   "Trip is already completed",
-			Instance: instance,
+			Status:   int32(http.StatusConflict),
+			Detail:   &detail,
+			Instance: &instance,
 			Code:     "trip_completed",
 		}
 	case errors.Is(err, trip.ErrDriverBusy):
+		detail := "Driver already has an active trip"
 		return http.StatusConflict, api.Problem{
 			Type:     "https://tripgo.example/problems/driver-busy",
 			Title:    "Driver busy",
-			Status:   http.StatusConflict,
-			Detail:   "Driver already has an active trip",
-			Instance: instance,
+			Status:   int32(http.StatusConflict),
+			Detail:   &detail,
+			Instance: &instance,
 			Code:     "driver_busy",
 		}
 	default:
+		detail := "Internal server error"
 		return http.StatusInternalServerError, api.Problem{
 			Type:     "https://tripgo.example/problems/internal-error",
 			Title:    "Internal server error",
-			Status:   http.StatusInternalServerError,
-			Detail:   "Internal server error",
-			Instance: instance,
+			Status:   int32(http.StatusInternalServerError),
+			Detail:   &detail,
+			Instance: &instance,
 			Code:     "internal_error",
 		}
 	}

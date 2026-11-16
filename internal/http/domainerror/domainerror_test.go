@@ -58,8 +58,9 @@ func TestProblem(t *testing.T) {
 			status, prob := domainerror.Problem(tt.err, "/api/v1/trips")
 			require.Equal(t, tt.wantStatus, status)
 			require.Equal(t, tt.wantCode, prob.Code)
+			require.NotNil(t, prob.Detail)
 			if status == http.StatusInternalServerError {
-				require.Equal(t, "Internal server error", prob.Detail)
+				require.Equal(t, "Internal server error", *prob.Detail)
 			}
 		})
 	}
