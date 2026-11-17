@@ -1,4 +1,4 @@
-# Лабораторная работа 2
+# Лабораторная работа 3
 
 ## Запуск
 
@@ -20,28 +20,42 @@ make test
 make test-integration
 ```
 
-## Архитектура
+## Координаты и маршрут
+
+Добавлены сохранение координаты через `POST /api/v1/trips/{tripId}/positions`
+и получение маршрута через `GET /api/v1/trips/{tripId}/positions`.
+Точка и `last_position_at` сохраняются в одной транзакции через `TxManager`.
+Запоздавшие координаты не уменьшают `last_position_at` благодаря SQL `GREATEST`.
+Маршрут сортируется по `recorded_at`, затем `id`.
+
+## Опрос устаревших поездок
 
 ```
-cmd/trip-service: config, container
-container: HTTP-обработчики, usecase, repository, infra
-HTTP: интерфейсы usecase, domain/model, generated
-usecase: domain/model, интерфейсы repository/transaction/clock/observer
-repository: domain, pgx/squirrel, infra/postgres/transaction
-infra: PostgreSQL, время, slog и OpenTelemetry
+Сканер по тикеру -> ограниченная очередь -> воркеры -> Push Service
 ```
 
-`main` читает конфигурацию, вызывает `container.New`, запускает HTTP-сервер
-и управляет остановкой. Конкретные зависимости собираются в `container`.
-Пул создаётся фабрикой `infra/postgres.NewPool`, вызываемой из контейнера.
+Сканер выбирает из БД активные поездки без свежих координат, начиная с самых
+старых. Если координат ещё нет, время считается от `started_at`.
+Для выборки добавлен частичный индекс `trips_active_position_idx`.
 
-Каждому действию соответствуют пакеты `usecase/trip/create`, `get`, `finish`
-и одноимённые HTTP-пакеты. Неэкспортируемые интерфейсы находятся в `contract.go`
-у потребителя. Например, для получения поездки нужен только `GetTrip`,
-а не весь репозиторий.
+| Переменная | По умолчанию |
+|---|---|
+| `POSITION_CHECK_INTERVAL` | `30s` |
+| `POSITION_STALE_AFTER` | `60s` |
+| `POSITION_WORKERS` | `4` |
+| `POSITION_QUEUE_SIZE` | `100` |
+| `PUSH_HTTP_URL` | из `.env` |
+| `PUSH_REQUEST_TIMEOUT` | `1s` |
 
-`domain/trip` содержит поездку, входные данные, статусы, валидацию и `Finish`.
-Домен не импортирует HTTP, pgx, OpenAPI или OTel. `model.CreateTripInput` - имя
-входного DTO для usecase. Его структура совпадает с `trip.Data`, поэтому 
-использован алиас без второго одинакового набора полей. HTTP-конвертеры
-явно преобразуют generated-модели в доменные и обратно.
+Повторы задач отсеиваются под mutex. После сохранения координаты ожидающая
+задача отменяется. При заполнении очереди сканер не блокируется, задача получает
+`dropped`, увеличиваются метрики и записывается Warn-лог.
+Гейтвей отправляет `REQUEST_POSITION` через HTTP с таймаутом и без ретраев.
+
+При остановке сначала завершаются HTTP-запросы, затем останавливается сканер,
+воркеры дорабатывают очередь и закрываются ресурсы. Общий бюджет задаёт
+`SHUTDOWN_TIMEOUT`.
+
+Размер очереди, занятые воркеры и результаты обработки видны в метриках OTel.
+Обработка задачи связана со сканером через span link, вызов Push Service имеет
+отдельный спан.

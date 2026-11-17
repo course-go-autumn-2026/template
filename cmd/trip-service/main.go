@@ -34,6 +34,8 @@ func run() error {
 		return fmt.Errorf("initialize application: %w", err)
 	}
 
+	app.Start(ctx)
+
 	signalCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

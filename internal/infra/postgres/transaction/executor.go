@@ -10,6 +10,7 @@ import (
 type Executor interface {
 	Exec(ctx context.Context, sqlQuery string, args ...any) (pgconn.CommandTag, error)
 	QueryRow(ctx context.Context, sqlQuery string, args ...any) pgx.Row
+	Query(ctx context.Context, sqlQuery string, args ...any) (pgx.Rows, error)
 }
 
 func ExecutorFromContext(ctx context.Context, pool Executor) Executor {

@@ -7,3 +7,5 @@ bin/
 *.exe
 .DS_Store
 coverage.out
+.idea
+*.Identifier

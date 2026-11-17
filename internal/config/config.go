@@ -18,6 +18,13 @@ type Config struct {
 	SamplerArg           float64
 	ServiceVersion       string
 
+	PositionCheckInterval time.Duration
+	PositionStaleAfter    time.Duration
+	PositionWorkers       int
+	PositionQueueSize     int
+	PushHTTPURL           string
+	PushRequestTimeout    time.Duration
+
 	HTTPAddr        string
 	LogLevel        string
 	ShutdownTimeout time.Duration
@@ -114,6 +121,10 @@ func Load() (Config, error) {
 		*setting.destination = value
 	}
 
+	if err := loadPositions(&cfg); err != nil {
+		return cfg, err
+	}
+
 	if err := loadTelemetry(&cfg); err != nil {
 		return cfg, err
 	}
@@ -198,6 +209,61 @@ func loadTelemetry(cfg *Config) error {
 
 	if cfg.ServiceVersion == "" {
 		cfg.ServiceVersion = "dev"
+	}
+
+	return nil
+}
+
+func loadPositions(cfg *Config) error {
+	for _, setting := range []struct {
+		name, fallback string
+		destination    *time.Duration
+	}{
+		{"POSITION_CHECK_INTERVAL", "30s", &cfg.PositionCheckInterval},
+		{"POSITION_STALE_AFTER", "60s", &cfg.PositionStaleAfter},
+		{"PUSH_REQUEST_TIMEOUT", "1s", &cfg.PushRequestTimeout},
+	} {
+		value, exists := os.LookupEnv(setting.name)
+
+		if !exists {
+			value = setting.fallback
+		}
+
+		duration, err := time.ParseDuration(value)
+
+		if err != nil || duration <= 0 {
+			return fmt.Errorf("%s must be a positive duration", setting.name)
+		}
+
+		*setting.destination = duration
+	}
+
+	for _, setting := range []struct {
+		name, fallback string
+		destination    *int
+	}{
+		{"POSITION_WORKERS", "4", &cfg.PositionWorkers}, {"POSITION_QUEUE_SIZE", "100", &cfg.PositionQueueSize},
+	} {
+		value, exists := os.LookupEnv(setting.name)
+
+		if !exists {
+			value = setting.fallback
+		}
+
+		number, err := strconv.Atoi(value)
+
+		if err != nil || number <= 0 {
+			return fmt.Errorf("%s must be a positive integer", setting.name)
+		}
+
+		*setting.destination = number
+	}
+
+	cfg.PushHTTPURL = os.Getenv("PUSH_HTTP_URL")
+	endpoint, err := url.Parse(cfg.PushHTTPURL)
+
+	if err != nil || endpoint.Host == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
+		return fmt.Errorf("PUSH_HTTP_URL is required and must be an http(s) URL without credentials, query or fragment")
 	}
 
 	return nil

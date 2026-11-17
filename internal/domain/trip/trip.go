@@ -30,9 +30,10 @@ type Data struct {
 type Trip struct {
 	ID uuid.UUID
 	Data
-	Status     Status
-	StartedAt  time.Time
-	FinishedAt *time.Time
+	Status         Status
+	StartedAt      time.Time
+	FinishedAt     *time.Time
+	LastPositionAt *time.Time
 }
 
 func New(id uuid.UUID, data Data, at time.Time) (Trip, error) {

@@ -36,13 +36,14 @@ func (t *TripRepository) getTrip(ctx context.Context, tripId uuid.UUID, forUpdat
 		"status",
 		"started_at",
 		"finished_at",
+		"last_position_at",
 	).
 		From("trips").
 		Where(sq.Eq{"id": tripId}).
 		PlaceholderFormat(sq.Dollar)
 
 	if forUpdate {
-		builder.Suffix("FOR UPDATE")
+		builder = builder.Suffix("FOR UPDATE")
 	}
 
 	query, args, err := builder.ToSql()
@@ -64,6 +65,7 @@ func (t *TripRepository) getTrip(ctx context.Context, tripId uuid.UUID, forUpdat
 		&trip.Status,
 		&trip.StartedAt,
 		&trip.FinishedAt,
+		&trip.LastPositionAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
