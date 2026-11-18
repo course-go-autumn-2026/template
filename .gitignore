@@ -5,4 +5,8 @@
 # Сборка
 bin/
 
+# Тестовые артефакты
+coverage*
+*.out
+
 .DS_Store
