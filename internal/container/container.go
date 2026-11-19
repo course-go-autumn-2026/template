@@ -16,9 +16,12 @@ import (
 
 	"github.com/xotapy-main/courseGo/internal/config"
 	"github.com/xotapy-main/courseGo/internal/domain/trip"
+	"github.com/xotapy-main/courseGo/internal/gateway/push"
 	api "github.com/xotapy-main/courseGo/internal/generated"
 	"github.com/xotapy-main/courseGo/internal/http/domainerror"
 	httpmw "github.com/xotapy-main/courseGo/internal/http/middleware"
+	httpposcreate "github.com/xotapy-main/courseGo/internal/http/position/create"
+	httpposlist "github.com/xotapy-main/courseGo/internal/http/position/list"
 	httpcreate "github.com/xotapy-main/courseGo/internal/http/trip/create"
 	httpfinish "github.com/xotapy-main/courseGo/internal/http/trip/finish"
 	httpget "github.com/xotapy-main/courseGo/internal/http/trip/get"
@@ -26,31 +29,43 @@ import (
 	"github.com/xotapy-main/courseGo/internal/infra/postgres/transaction"
 	"github.com/xotapy-main/courseGo/internal/infra/telemetry"
 	repotrip "github.com/xotapy-main/courseGo/internal/repository/trip"
+	ucposcreate "github.com/xotapy-main/courseGo/internal/usecase/position/create"
+	ucposlist "github.com/xotapy-main/courseGo/internal/usecase/position/list"
 	uccreate "github.com/xotapy-main/courseGo/internal/usecase/trip/create"
 	ucfinish "github.com/xotapy-main/courseGo/internal/usecase/trip/finish"
 	ucget "github.com/xotapy-main/courseGo/internal/usecase/trip/get"
+	workerpositions "github.com/xotapy-main/courseGo/internal/worker/positions"
 )
 
 var _ api.ServerInterface = (*apiAdapter)(nil)
 
 type apiAdapter struct {
-	api.Unimplemented
-	create *httpcreate.Handler
-	get    *httpget.Handler
-	finish *httpfinish.Handler
-	pool   *pgxpool.Pool
+	createTrip     *httpcreate.Handler
+	getTrip        *httpget.Handler
+	finishTrip     *httpfinish.Handler
+	createPosition *httpposcreate.Handler
+	listPositions  *httpposlist.Handler
+	pool           *pgxpool.Pool
 }
 
 func (a *apiAdapter) CreateTrip(w http.ResponseWriter, r *http.Request, params api.CreateTripParams) {
-	a.create.Handle(w, r, params)
+	a.createTrip.Handle(w, r, params)
 }
 
 func (a *apiAdapter) GetTrip(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
-	a.get.Handle(w, r, tripID)
+	a.getTrip.Handle(w, r, tripID)
 }
 
 func (a *apiAdapter) FinishTrip(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
-	a.finish.Handle(w, r, tripID)
+	a.finishTrip.Handle(w, r, tripID)
+}
+
+func (a *apiAdapter) CreateTripPosition(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
+	a.createPosition.Handle(w, r, tripID)
+}
+
+func (a *apiAdapter) ListTripPositions(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
+	a.listPositions.Handle(w, r, tripID)
 }
 
 func (a *apiAdapter) Health(w http.ResponseWriter, _ *http.Request) {
@@ -87,6 +102,8 @@ type Container struct {
 	Logger         *slog.Logger
 	TracerProvider *sdktrace.TracerProvider
 	MeterProvider  *sdkmetric.MeterProvider
+	Poller         *workerpositions.Poller
+	PushClient     *push.Client
 }
 
 func New(ctx context.Context, cfg *config.Config) (*Container, error) {
@@ -116,25 +133,51 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 
 	txMgr := transaction.New(pool)
 	tripRepo := repotrip.New(pool)
+	pushClient := push.NewClient(cfg.PushHTTPURL, cfg.PushRequestTimeout)
+
+	poller := workerpositions.New(
+		tripRepo,
+		pushClient,
+		workerpositions.NewRealTicker(cfg.PositionCheckInterval),
+		logger,
+		workerpositions.Metrics{
+			StaleChecks:     metrics.StaleChecks,
+			QueueSize:       metrics.PositionQueueSize,
+			WorkersActive:   metrics.PositionWorkersActive,
+			Requests:        metrics.PositionRequests,
+			RequestDuration: metrics.PositionRequestDuration,
+		},
+		workerpositions.Config{
+			CheckInterval:  cfg.PositionCheckInterval,
+			StaleAfter:     cfg.PositionStaleAfter,
+			Workers:        cfg.PositionWorkers,
+			QueueSize:      cfg.PositionQueueSize,
+			RequestTimeout: cfg.PushRequestTimeout,
+		},
+	)
 
 	createUC := uccreate.New(tripRepo, txMgr)
 	getUC := ucget.New(tripRepo)
 	finishUC := ucfinish.New(tripRepo, txMgr)
+	createPosUC := ucposcreate.New(tripRepo, txMgr, poller)
+	listPosUC := ucposlist.New(tripRepo)
 
 	createH := httpcreate.New(createUC, logger, metrics.TripsCreated)
 	getH := httpget.New(getUC)
 	finishH := httpfinish.New(finishUC, logger, metrics.TripsCompleted)
+	createPosH := httpposcreate.New(createPosUC, logger, metrics.PositionsSaved)
+	listPosH := httpposlist.New(listPosUC)
 
 	adapter := &apiAdapter{
-		create: createH,
-		get:    getH,
-		finish: finishH,
-		pool:   pool,
+		createTrip:     createH,
+		getTrip:        getH,
+		finishTrip:     finishH,
+		createPosition: createPosH,
+		listPositions:  listPosH,
+		pool:           pool,
 	}
 
 	r := chi.NewRouter()
-
-	// Порядок п. 6.4: Recover -> Tracing -> Logging -> Metrics -> роутер
 	r.Use(httpmw.Recover(logger))
 	r.Use(func(next http.Handler) http.Handler {
 		return otelhttp.NewHandler(next, "http.server")
@@ -155,5 +198,7 @@ func New(ctx context.Context, cfg *config.Config) (*Container, error) {
 		Logger:         logger,
 		TracerProvider: tp,
 		MeterProvider:  mp,
+		Poller:         poller,
+		PushClient:     pushClient,
 	}, nil
 }

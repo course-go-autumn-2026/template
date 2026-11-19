@@ -21,57 +21,64 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	c, err := container.New(ctx, cfg)
+	c, err := container.New(rootCtx, cfg)
 	if err != nil {
 		slog.Error("container init error", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	defer c.Pool.Close()
 
-	if c.TracerProvider != nil {
-		defer func() { _ = c.TracerProvider.Shutdown(context.Background()) }()
-	}
-	if c.MeterProvider != nil {
-		defer func() { _ = c.MeterProvider.Shutdown(context.Background()) }()
-	}
+	c.Poller.Start(rootCtx)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           c.Router,
-		ReadTimeout:       5 * time.Second,
-		ReadHeaderTimeout: 2 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
-
-	serverErr := make(chan error, 1)
+	errCh := make(chan error, 1)
 	go func() {
-		c.Logger.Info("server starting", slog.String("addr", cfg.HTTPAddr))
+		c.Logger.Info("starting http server", slog.String("addr", cfg.HTTPAddr))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErr <- err
+			errCh <- err
 		}
+		close(errCh)
 	}()
 
 	select {
-	case err := <-serverErr:
-		c.Logger.Error("server error", slog.String("error", err.Error()))
-		os.Exit(1)
-	case sig := <-shutdown:
-		c.Logger.Info("shutting down", slog.String("signal", sig.String()))
-
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		defer shutdownCancel()
-
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			c.Logger.Error("forced shutdown", slog.String("error", err.Error()))
-			os.Exit(1)
+	case <-rootCtx.Done():
+		c.Logger.Info("shutdown signal received")
+	case srvErr := <-errCh:
+		if srvErr != nil {
+			c.Logger.Error("http server error", slog.String("error", srvErr.Error()))
 		}
-		c.Logger.Info("server stopped")
 	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancel()
+
+	// 1. Останавливаем HTTP-сервер и дожидаемся текущих запросов
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		c.Logger.Error("http server shutdown error", slog.String("error", err.Error()))
+	}
+
+	// 2–3. Останавливаем сканер и даём воркерам доработать очередь в пределах SHUTDOWN_TIMEOUT
+	if err := c.Poller.Shutdown(shutdownCtx); err != nil {
+		c.Logger.Error("position poller shutdown error", slog.String("error", err.Error()))
+	}
+
+	// 4. Закрываем HTTP-клиент и пул БД
+	c.PushClient.Close()
+	c.Pool.Close()
+
+	if c.TracerProvider != nil {
+		_ = c.TracerProvider.Shutdown(shutdownCtx)
+	}
+	if c.MeterProvider != nil {
+		_ = c.MeterProvider.Shutdown(shutdownCtx)
+	}
+
+	c.Logger.Info("service stopped cleanly")
 }
