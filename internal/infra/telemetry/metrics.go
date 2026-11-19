@@ -15,11 +15,17 @@ import (
 )
 
 type Metrics struct {
-	HTTPRequestDuration metric.Float64Histogram
-	HTTPActiveRequests  metric.Int64UpDownCounter
-	DBOperationDuration metric.Float64Histogram
-	TripsCreated        metric.Int64Counter
-	TripsCompleted      metric.Int64Counter
+	HTTPRequestDuration     metric.Float64Histogram
+	HTTPActiveRequests      metric.Int64UpDownCounter
+	DBOperationDuration     metric.Float64Histogram
+	TripsCreated            metric.Int64Counter
+	TripsCompleted          metric.Int64Counter
+	StaleChecks             metric.Int64Counter
+	PositionQueueSize       metric.Int64UpDownCounter
+	PositionWorkersActive   metric.Int64UpDownCounter
+	PositionRequests        metric.Int64Counter
+	PositionRequestDuration metric.Float64Histogram
+	PositionsSaved          metric.Int64Counter
 }
 
 func NewNoopMetrics() *Metrics {
@@ -29,13 +35,25 @@ func NewNoopMetrics() *Metrics {
 	dbDur, _ := meter.Float64Histogram("db.client.operation.duration")
 	created, _ := meter.Int64Counter("tripgo.trips.created")
 	completed, _ := meter.Int64Counter("tripgo.trips.completed")
+	staleChecks, _ := meter.Int64Counter("tripgo.stale_checks")
+	queueSize, _ := meter.Int64UpDownCounter("tripgo.position_requests.queue.size")
+	workersActive, _ := meter.Int64UpDownCounter("tripgo.position_requests.workers.active")
+	posRequests, _ := meter.Int64Counter("tripgo.position_requests")
+	posReqDuration, _ := meter.Float64Histogram("tripgo.position_requests.duration")
+	posSaved, _ := meter.Int64Counter("tripgo.positions.saved")
 
 	return &Metrics{
-		HTTPRequestDuration: httpDur,
-		HTTPActiveRequests:  httpAct,
-		DBOperationDuration: dbDur,
-		TripsCreated:        created,
-		TripsCompleted:      completed,
+		HTTPRequestDuration:     httpDur,
+		HTTPActiveRequests:      httpAct,
+		DBOperationDuration:     dbDur,
+		TripsCreated:            created,
+		TripsCompleted:          completed,
+		StaleChecks:             staleChecks,
+		PositionQueueSize:       queueSize,
+		PositionWorkersActive:   workersActive,
+		PositionRequests:        posRequests,
+		PositionRequestDuration: posReqDuration,
+		PositionsSaved:          posSaved,
 	}
 }
 
@@ -75,38 +93,71 @@ func InitMetrics(ctx context.Context, serviceName, endpoint, protocol string) (*
 	)
 	otel.SetMeterProvider(mp)
 
-	meter := mp.Meter(serviceName)
+	metrics, err := newMetricsFromMeter(mp.Meter(serviceName))
+	if err != nil {
+		return NewNoopMetrics(), mp, err
+	}
 
+	return metrics, mp, nil
+}
+
+func newMetricsFromMeter(meter metric.Meter) (*Metrics, error) {
 	httpDur, err := meter.Float64Histogram("http.server.request.duration", metric.WithUnit("s"))
 	if err != nil {
-		return NewNoopMetrics(), mp, err
+		return nil, err
 	}
-
 	httpAct, err := meter.Int64UpDownCounter("http.server.active_requests", metric.WithUnit("{request}"))
 	if err != nil {
-		return NewNoopMetrics(), mp, err
+		return nil, err
 	}
-
 	dbDur, err := meter.Float64Histogram("db.client.operation.duration", metric.WithUnit("s"))
 	if err != nil {
-		return NewNoopMetrics(), mp, err
+		return nil, err
 	}
-
 	created, err := meter.Int64Counter("tripgo.trips.created", metric.WithUnit("{trip}"))
 	if err != nil {
-		return NewNoopMetrics(), mp, err
+		return nil, err
 	}
-
 	completed, err := meter.Int64Counter("tripgo.trips.completed", metric.WithUnit("{trip}"))
 	if err != nil {
-		return NewNoopMetrics(), mp, err
+		return nil, err
+	}
+	staleChecks, err := meter.Int64Counter("tripgo.stale_checks", metric.WithUnit("{check}"))
+	if err != nil {
+		return nil, err
+	}
+	queueSize, err := meter.Int64UpDownCounter("tripgo.position_requests.queue.size", metric.WithUnit("{task}"))
+	if err != nil {
+		return nil, err
+	}
+	workersActive, err := meter.Int64UpDownCounter("tripgo.position_requests.workers.active", metric.WithUnit("{worker}"))
+	if err != nil {
+		return nil, err
+	}
+	posRequests, err := meter.Int64Counter("tripgo.position_requests", metric.WithUnit("{request}"))
+	if err != nil {
+		return nil, err
+	}
+	posReqDuration, err := meter.Float64Histogram("tripgo.position_requests.duration", metric.WithUnit("s"))
+	if err != nil {
+		return nil, err
+	}
+	posSaved, err := meter.Int64Counter("tripgo.positions.saved", metric.WithUnit("{position}"))
+	if err != nil {
+		return nil, err
 	}
 
 	return &Metrics{
-		HTTPRequestDuration: httpDur,
-		HTTPActiveRequests:  httpAct,
-		DBOperationDuration: dbDur,
-		TripsCreated:        created,
-		TripsCompleted:      completed,
-	}, mp, nil
+		HTTPRequestDuration:     httpDur,
+		HTTPActiveRequests:      httpAct,
+		DBOperationDuration:     dbDur,
+		TripsCreated:            created,
+		TripsCompleted:          completed,
+		StaleChecks:             staleChecks,
+		PositionQueueSize:       queueSize,
+		PositionWorkersActive:   workersActive,
+		PositionRequests:        posRequests,
+		PositionRequestDuration: posReqDuration,
+		PositionsSaved:          posSaved,
+	}, nil
 }

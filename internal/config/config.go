@@ -20,6 +20,12 @@ type Config struct {
 	OtelEndpoint           string
 	OtelProtocol           string
 	OtelTracesSampler      string
+	PositionCheckInterval  time.Duration
+	PositionStaleAfter     time.Duration
+	PositionWorkers        int
+	PositionQueueSize      int
+	PushHTTPURL            string
+	PushRequestTimeout     time.Duration
 }
 
 func Load() (*Config, error) {
@@ -58,6 +64,31 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	checkInterval, err := parseDurationEnv("POSITION_CHECK_INTERVAL", 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	staleAfter, err := parseDurationEnv("POSITION_STALE_AFTER", 60*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	workers, err := parseIntEnv("POSITION_WORKERS", 4)
+	if err != nil {
+		return nil, err
+	}
+
+	queueSize, err := parseIntEnv("POSITION_QUEUE_SIZE", 100)
+	if err != nil {
+		return nil, err
+	}
+
+	pushTimeout, err := parseDurationEnv("PUSH_REQUEST_TIMEOUT", time.Second)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		HTTPAddr:               getEnv("HTTP_ADDR", ":8080"),
 		DatabaseURL:            dbURL,
@@ -71,6 +102,12 @@ func Load() (*Config, error) {
 		OtelEndpoint:           getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4318"),
 		OtelProtocol:           getEnv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"),
 		OtelTracesSampler:      getEnv("OTEL_TRACES_SAMPLER", "always_on"),
+		PositionCheckInterval:  checkInterval,
+		PositionStaleAfter:     staleAfter,
+		PositionWorkers:        workers,
+		PositionQueueSize:      queueSize,
+		PushHTTPURL:            getEnv("PUSH_HTTP_URL", "http://localhost:8081"),
+		PushRequestTimeout:     pushTimeout,
 	}, nil
 }
 
@@ -91,6 +128,21 @@ func parseInt32Env(k string, def int32) (int32, error) {
 		return 0, err
 	}
 	return int32(n), nil
+}
+
+func parseIntEnv(k string, def int) (int, error) {
+	v := os.Getenv(k)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, err
+	}
+	if n <= 0 {
+		return 0, errors.New(k + " must be positive")
+	}
+	return n, nil
 }
 
 func parseDurationEnv(k string, def time.Duration) (time.Duration, error) {
