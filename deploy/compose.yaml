@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tripgo
+      POSTGRES_USER: tripgo
+      POSTGRES_PASSWORD: tripgo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tripgo -d tripgo"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: migrator
+    command:
+      - -dir
+      - /migrations
+      - postgres
+      - postgres://tripgo:tripgo@postgres:5432/tripgo?sslmode=disable
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  trip-service:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: runtime
+    environment:
+      HTTP_ADDR: :8080
+      LOG_LEVEL: info
+      SHUTDOWN_TIMEOUT: 10s
+      IDEMPOTENCY_TTL: 24h
+      DATABASE_URL: postgres://tripgo:tripgo@postgres:5432/tripgo?sslmode=disable
+      DATABASE_MAX_CONNS: "10"
+      DATABASE_MIN_CONNS: "2"
+      DATABASE_MAX_CONN_LIFETIME: 30m
+      DATABASE_CONNECT_TIMEOUT: 5s
+      DATABASE_QUERY_TIMEOUT: 3s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres-data:

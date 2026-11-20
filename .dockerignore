@@ -1,0 +1,10 @@
+.git
+.github
+.idea
+.tripgo
+.env
+.env.*
+bin
+deploy/compose.yaml
+**/*_test.go
+**/*.md
