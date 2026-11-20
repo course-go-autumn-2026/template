@@ -12,6 +12,14 @@ import (
 
 // Config contains application settings loaded from environment variables.
 type Config struct {
+	PositionCheckInterval time.Duration `env:"POSITION_CHECK_INTERVAL" envDefault:"30s"`
+	PositionStaleAfter    time.Duration `env:"POSITION_STALE_AFTER" envDefault:"60s"`
+	PositionWorkers       int           `env:"POSITION_WORKERS" envDefault:"4"`
+	PositionQueueSize     int           `env:"POSITION_QUEUE_SIZE" envDefault:"100"`
+	PositionScanBatchSize int           `env:"POSITION_SCAN_BATCH_SIZE" envDefault:"100"`
+	PushHTTPURL           string        `env:"PUSH_HTTP_URL,required,notEmpty"`
+	PushRequestTimeout    time.Duration `env:"PUSH_REQUEST_TIMEOUT" envDefault:"1s"`
+
 	HTTPAddr                string        `env:"HTTP_ADDR,required,notEmpty"`
 	HTTPReadTimeout         time.Duration `env:"HTTP_READ_TIMEOUT" envDefault:"5s"`
 	HTTPReadHeaderTimeout   time.Duration `env:"HTTP_READ_HEADER_TIMEOUT" envDefault:"5s"`
@@ -53,6 +61,9 @@ func Load() (Config, error) {
 		name  string
 		value time.Duration
 	}{
+		{"POSITION_CHECK_INTERVAL", cfg.PositionCheckInterval},
+		{"POSITION_STALE_AFTER", cfg.PositionStaleAfter},
+		{"PUSH_REQUEST_TIMEOUT", cfg.PushRequestTimeout},
 		{"HTTP_READ_TIMEOUT", cfg.HTTPReadTimeout},
 		{"HTTP_READ_HEADER_TIMEOUT", cfg.HTTPReadHeaderTimeout},
 		{"HTTP_WRITE_TIMEOUT", cfg.HTTPWriteTimeout},
@@ -67,6 +78,9 @@ func Load() (Config, error) {
 		}
 	}
 
+	if cfg.PositionWorkers < 1 || cfg.PositionQueueSize < 1 || cfg.PositionScanBatchSize < 1 {
+		return Config{}, fmt.Errorf("position workers, queue size and batch size must be positive")
+	}
 	cfg.LogLevel = strings.ToLower(cfg.LogLevel)
 	switch cfg.LogLevel {
 	case "debug", "info", "warn", "error":

@@ -92,9 +92,10 @@ func TestUsecase_Execute(t *testing.T) {
 							assert.Equal(t, saved.ID, id)
 							assert.Equal(t, saved.StartedAt, at)
 							return nil
-						})
+						},
+					)
 					if tt.withKey {
-						repo.EXPECT().CompleteIdempotencyKey(gomock.Any(), key, gomock.Any()).DoAndReturn(func(_ context.Context, _ uuid.UUID, id uuid.UUID) error {
+						repo.EXPECT().CompleteIdempotencyKey(gomock.Any(), key, gomock.Any()).DoAndReturn(func(_ context.Context, _, id uuid.UUID) error {
 							assert.Equal(t, saved.ID, id)
 							return tt.completeErr
 						})

@@ -12,12 +12,14 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/n1ckerr0r/avito-labs/internal/config"
+	"github.com/n1ckerr0r/avito-labs/internal/gateway/push"
 	api "github.com/n1ckerr0r/avito-labs/internal/generated"
 	router "github.com/n1ckerr0r/avito-labs/internal/http"
 	"github.com/n1ckerr0r/avito-labs/internal/http/middleware"
 	createhttp "github.com/n1ckerr0r/avito-labs/internal/http/trip/create"
 	finishhttp "github.com/n1ckerr0r/avito-labs/internal/http/trip/finish"
 	gethttp "github.com/n1ckerr0r/avito-labs/internal/http/trip/get"
+	positionhttp "github.com/n1ckerr0r/avito-labs/internal/http/trip/positions"
 	"github.com/n1ckerr0r/avito-labs/internal/infra/postgres"
 	"github.com/n1ckerr0r/avito-labs/internal/infra/postgres/transaction"
 	"github.com/n1ckerr0r/avito-labs/internal/infra/telemetry"
@@ -25,6 +27,7 @@ import (
 	createuc "github.com/n1ckerr0r/avito-labs/internal/usecase/trip/create"
 	finishuc "github.com/n1ckerr0r/avito-labs/internal/usecase/trip/finish"
 	getuc "github.com/n1ckerr0r/avito-labs/internal/usecase/trip/get"
+	"github.com/n1ckerr0r/avito-labs/internal/worker/positions"
 )
 
 const meterName = "trip-service"
@@ -70,7 +73,18 @@ func New(ctx context.Context, cfg config.Config) (*Container, error) {
 	get := gethttp.New(getuc.New(repo, cfg.DatabaseQueryTimeout))
 	finish := finishhttp.New(finishuc.New(repo, txManager), tripMetrics, logger)
 
+	pushClient := push.New(cfg.PushHTTPURL, cfg.PushRequestTimeout)
+	worker, err := positions.New(pool, pushClient, logger, meter, otelProviders.TracerProvider.Tracer(meterName), cfg.PositionCheckInterval, cfg.PositionStaleAfter, cfg.PushRequestTimeout, cfg.DatabaseQueryTimeout, cfg.PositionScanBatchSize, cfg.PositionQueueSize, cfg.PositionWorkers)
+	if err != nil {
+		return nil, fmt.Errorf("build position worker: %w", err)
+	}
+	positionHandler, err := positionhttp.New(pool, txManager, worker, cfg.DatabaseQueryTimeout, meter, logger)
+	if err != nil {
+		return nil, fmt.Errorf("build position handler: %w", err)
+	}
+	worker.Start(context.WithoutCancel(ctx))
 	apiHandler := router.New(create, get, finish, pool, cfg.DatabaseQueryTimeout)
+	apiHandler.Positions = positionHandler
 	mux := api.HandlerWithOptions(apiHandler, api.ChiServerOptions{
 		ErrorHandlerFunc: router.ErrorHandler,
 		Middlewares:      []api.MiddlewareFunc{middleware.Route(activeRequests)},
@@ -101,6 +115,10 @@ func New(ctx context.Context, cfg config.Config) (*Container, error) {
 		Logger: logger,
 		Server: server,
 		Close: func(ctx context.Context) error {
+			if err := worker.Stop(ctx); err != nil {
+				return err
+			}
+			pushClient.Close()
 			pool.Close()
 			return otelProviders.Shutdown(ctx)
 		},

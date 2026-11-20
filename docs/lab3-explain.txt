@@ -1,0 +1,14 @@
+ANALYZE
+                                                                                                                QUERY PLAN                                                                                                                 
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..37.92 rows=100 width=40) (actual time=0.021..0.052 rows=100 loops=1)
+   Buffers: shared hit=6
+   ->  Index Scan using trips_stale_position_idx on trips  (cost=0.29..418.33 rows=1111 width=40) (actual time=0.020..0.043 rows=100 loops=1)
+         Index Cond: ((COALESCE(last_position_at, started_at) < (now() - '00:01:00'::interval)) AND (ROW(COALESCE(last_position_at, started_at), id) > ROW((now() - '01:23:20'::interval), '00000000-0000-0000-0000-000000000000'::uuid)))
+         Buffers: shared hit=6
+ Planning:
+   Buffers: shared hit=71
+ Planning Time: 0.727 ms
+ Execution Time: 0.176 ms
+(9 rows)
+

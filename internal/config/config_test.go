@@ -7,9 +7,11 @@ import (
 )
 
 func TestLoad(t *testing.T) {
+	const shutdownTimeout = "SHUTDOWN_TIMEOUT"
+	const invalid = "invalid"
 	values := map[string]string{
-		"HTTP_ADDR": " :8080 ", "DATABASE_URL": " postgres://localhost/db ",
-		"LOG_LEVEL": " INFO ", "SHUTDOWN_TIMEOUT": "10s",
+		"PUSH_HTTP_URL": "http://localhost:8090", "HTTP_ADDR": " :8080 ", "DATABASE_URL": " postgres://localhost/db ",
+		"LOG_LEVEL": " INFO ", shutdownTimeout: "10s",
 		"DATABASE_MAX_CONNS": "10", "DATABASE_MIN_CONNS": "0",
 		"DATABASE_CONNECT_TIMEOUT": "5s", "DATABASE_QUERY_TIMEOUT": "5s",
 		"DATABASE_MAX_CONN_LIFETIME": "1h", "OTEL_SERVICE_NAME": "trip",
@@ -30,13 +32,17 @@ func TestLoad(t *testing.T) {
 	}
 
 	for _, tc := range []struct{ name, value string }{
-		{"HTTP_ADDR", "  "}, {"SHUTDOWN_TIMEOUT", "invalid"}, {"HTTP_WRITE_TIMEOUT", "0s"},
-		{"DATABASE_MAX_CONNS", "0"}, {"DATABASE_MIN_CONNS", "11"},
-		{"OTEL_EXPORTER_OTLP_PROTOCOL", "invalid"}, {"OTEL_TRACES_SAMPLER", "invalid"},
+		{"HTTP_ADDR", "  "},
+		{shutdownTimeout, invalid},
+		{"HTTP_WRITE_TIMEOUT", "0s"},
+		{"DATABASE_MAX_CONNS", "0"},
+		{"DATABASE_MIN_CONNS", "11"},
+		{"OTEL_EXPORTER_OTLP_PROTOCOL", invalid},
+		{"OTEL_TRACES_SAMPLER", invalid},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(tc.name, tc.value)
-			if _, err := Load(); err == nil || (!strings.Contains(err.Error(), tc.name) && !(tc.name == "SHUTDOWN_TIMEOUT" && strings.Contains(err.Error(), "ShutdownTimeout"))) {
+			if _, err := Load(); err == nil || (!strings.Contains(err.Error(), tc.name) && (tc.name != shutdownTimeout || !strings.Contains(err.Error(), "ShutdownTimeout"))) {
 				t.Fatalf("expected error mentioning %s, got %v", tc.name, err)
 			}
 		})

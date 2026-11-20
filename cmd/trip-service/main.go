@@ -29,7 +29,7 @@ func run() error {
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	app, err := container.New(signalCtx, cfg)
+	app, err := container.New(context.Background(), cfg)
 	if err != nil {
 		return fmt.Errorf("build container: %w", err)
 	}

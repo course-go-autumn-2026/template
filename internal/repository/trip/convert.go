@@ -15,7 +15,7 @@ import (
 func (r *Repository) scan(ctx context.Context, query string, args ...any) (model.Trip, error) {
 	var t model.Trip
 
-	err := postgres.Executor(ctx, r.pool).QueryRow(ctx, query, args...).Scan(&t.ID, &t.UserID, &t.DriverID, &t.StartPoint.Latitude, &t.StartPoint.Longitude, &t.EndPoint.Latitude, &t.EndPoint.Longitude, &t.Price, &t.Status, &t.StartedAt, &t.FinishedAt)
+	err := postgres.Executor(ctx, r.pool).QueryRow(ctx, query, args...).Scan(&t.ID, &t.UserID, &t.DriverID, &t.StartPoint.Latitude, &t.StartPoint.Longitude, &t.EndPoint.Latitude, &t.EndPoint.Longitude, &t.Price, &t.Status, &t.StartedAt, &t.FinishedAt, &t.LastPositionAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Trip{}, trip.ErrTripNotFound
 	}

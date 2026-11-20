@@ -80,7 +80,6 @@ func (u *Usecase) Execute(ctx context.Context, in Input) (Result, error) {
 
 		return nil
 	})
-
 	if err != nil {
 		return Result{}, err
 	}

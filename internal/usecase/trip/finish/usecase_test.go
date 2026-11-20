@@ -39,7 +39,7 @@ func TestUsecase_Execute(t *testing.T) {
 					return updateErr
 				})
 				if updateErr == nil {
-					repo.EXPECT().AddStatusHistory(gomock.Any(), id, gomock.Any(), string(trip.StatusCompleted), "trip finished", gomock.Any()).DoAndReturn(func(_ context.Context, _ uuid.UUID, from *string, _ string, _ string, at time.Time) error {
+					repo.EXPECT().AddStatusHistory(gomock.Any(), id, gomock.Any(), string(trip.StatusCompleted), "trip finished", gomock.Any()).DoAndReturn(func(_ context.Context, _ uuid.UUID, from *string, _, _ string, at time.Time) error {
 						require.NotNil(t, from)
 						assert.Equal(t, string(trip.StatusActive), *from)
 						require.NotNil(t, updated.FinishedAt)

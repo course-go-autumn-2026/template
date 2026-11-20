@@ -11,6 +11,7 @@ import (
 	createhttp "github.com/n1ckerr0r/avito-labs/internal/http/trip/create"
 	finishhttp "github.com/n1ckerr0r/avito-labs/internal/http/trip/finish"
 	gethttp "github.com/n1ckerr0r/avito-labs/internal/http/trip/get"
+	positionhttp "github.com/n1ckerr0r/avito-labs/internal/http/trip/positions"
 )
 
 // pinger is satisfied by *pgxpool.Pool without importing internal/infra here.
@@ -21,6 +22,7 @@ type pinger interface {
 type API struct {
 	api.Unimplemented
 
+	Positions   *positionhttp.Handler
 	create      *createhttp.Handler
 	get         *gethttp.Handler
 	finish      *finishhttp.Handler
@@ -63,4 +65,12 @@ func (a *API) Ready(w http.ResponseWriter, r *http.Request) {
 // ErrorHandler renders request parsing failures as RFC 9457 problems.
 func ErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	httputil.WriteProblem(w, r, http.StatusBadRequest, httputil.Problem("invalid_request", "Invalid request", err.Error(), http.StatusBadRequest))
+}
+
+func (a *API) CreateTripPosition(w http.ResponseWriter, r *http.Request, id api.TripId) {
+	a.Positions.Create(w, r, id)
+}
+
+func (a *API) ListTripPositions(w http.ResponseWriter, r *http.Request, id api.TripId) {
+	a.Positions.List(w, r, id)
 }
