@@ -11,11 +11,13 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/saifullinartem/saifullin_golang/internal/config"
+	"github.com/saifullinartem/saifullin_golang/internal/gateway/push"
 	transport "github.com/saifullinartem/saifullin_golang/internal/http"
 	"github.com/saifullinartem/saifullin_golang/internal/http/middleware"
 	httpcreate "github.com/saifullinartem/saifullin_golang/internal/http/trip/create"
 	httpfinish "github.com/saifullinartem/saifullin_golang/internal/http/trip/finish"
 	httpget "github.com/saifullinartem/saifullin_golang/internal/http/trip/get"
+	httpposition "github.com/saifullinartem/saifullin_golang/internal/http/trip/position"
 	"github.com/saifullinartem/saifullin_golang/internal/infra/postgres"
 	"github.com/saifullinartem/saifullin_golang/internal/infra/postgres/transaction"
 	"github.com/saifullinartem/saifullin_golang/internal/infra/telemetry"
@@ -23,13 +25,19 @@ import (
 	"github.com/saifullinartem/saifullin_golang/internal/usecase/trip/create"
 	"github.com/saifullinartem/saifullin_golang/internal/usecase/trip/finish"
 	"github.com/saifullinartem/saifullin_golang/internal/usecase/trip/get"
+	positionusecase "github.com/saifullinartem/saifullin_golang/internal/usecase/trip/position"
+	"github.com/saifullinartem/saifullin_golang/internal/worker/positions"
 )
 
 type Container struct {
-	Server    *http.Server
-	Logger    *slog.Logger
-	pool      *pgxpool.Pool
-	telemetry *telemetry.Providers
+	Server         *http.Server
+	Logger         *slog.Logger
+	pool           *pgxpool.Pool
+	telemetry      *telemetry.Providers
+	stopBackground context.CancelFunc
+	scannerDone    chan struct{}
+	poolWorker     *positions.Pool
+	pushGateway    *push.Gateway
 }
 
 func New(ctx context.Context, cfg config.Config) (result *Container, err error) {
@@ -70,6 +78,10 @@ func New(ctx context.Context, cfg config.Config) (result *Container, err error) 
 	if err != nil {
 		return nil, err
 	}
+	positionMetrics, err := telemetry.NewPositionMetrics(meter)
+	if err != nil {
+		return nil, err
+	}
 	_, err = meter.Int64ObservableGauge("tripgo.trips.active", metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
 		queryCtx, cancelQuery := context.WithTimeout(ctx, cfg.DatabaseQueryTimeout)
 		defer cancelQuery()
@@ -84,7 +96,22 @@ func New(ctx context.Context, cfg config.Config) (result *Container, err error) 
 		return nil, fmt.Errorf("active trips gauge: %w", err)
 	}
 	clock := telemetry.Clock{}
-	handler := transport.New(httpcreate.New(create.New(repo, history, tx, clock, events, logger)), httpget.New(get.New(repo)), httpfinish.New(finish.New(repo, history, tx, clock, events, logger)), c.pool, cfg.DatabaseQueryTimeout)
+	pushGateway := push.New(cfg.PushHTTPURL, cfg.PushRequestTimeout, tel.Traces.Tracer("tripgo/push"))
+	workerPool := positions.New(cfg.PositionWorkers, cfg.PositionQueueSize, cfg.PushRequestTimeout, pushGateway, logger, positionMetrics)
+	workerPool.SetTracer(tel.Traces.Tracer("tripgo/positions"))
+	backgroundCtx, stopBackground := context.WithCancel(context.Background())
+	workerPool.Start(context.Background())
+	scanner := positions.NewScanner(repo, workerPool, cfg.PositionCheckInterval, cfg.PositionStaleAfter, logger, cfg.PositionScanBatchSize)
+	scanner.SetTracer(tel.Traces.Tracer("tripgo/positions"))
+	c.scannerDone = make(chan struct{})
+	go func() {
+		defer close(c.scannerDone)
+		scanner.Run(backgroundCtx)
+	}()
+	positionUC := positionusecase.New(repo, tx, positionMetrics)
+	positionHandler := httpposition.New(positionUC, workerPool.Cancel)
+	c.stopBackground, c.poolWorker, c.pushGateway = stopBackground, workerPool, pushGateway
+	handler := transport.New(httpcreate.New(create.New(repo, history, tx, clock, events, logger)), httpget.New(get.New(repo)), httpfinish.New(finish.New(repo, history, tx, clock, events, logger)), c.pool, cfg.DatabaseQueryTimeout, positionHandler)
 	router := transport.NewRouter(handler)
 	mw, err := middleware.New(logger, tel.Traces, tel.Metrics, router)
 	if err != nil {
@@ -95,6 +122,18 @@ func New(ctx context.Context, cfg config.Config) (result *Container, err error) 
 }
 
 func (c *Container) Close(ctx context.Context) {
+	if c.stopBackground != nil {
+		c.stopBackground()
+		<-c.scannerDone
+	}
+	if c.poolWorker != nil {
+		if err := c.poolWorker.Stop(ctx); err != nil {
+			c.Logger.WarnContext(ctx, "position workers shutdown incomplete", "error", err)
+		}
+	}
+	if c.pushGateway != nil {
+		c.pushGateway.Close()
+	}
 	if err := c.telemetry.Shutdown(ctx); err != nil {
 		c.Logger.WarnContext(ctx, "telemetry shutdown incomplete", "error", err)
 	}

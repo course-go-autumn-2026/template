@@ -18,15 +18,34 @@ type Coordinates struct {
 }
 
 type Trip struct {
-	ID         uuid.UUID
-	UserID     uuid.UUID
-	DriverID   uuid.UUID
-	StartPoint Coordinates
-	EndPoint   Coordinates
-	Price      int64
-	Status     string
-	StartedAt  time.Time
-	FinishedAt *time.Time
+	ID             uuid.UUID
+	UserID         uuid.UUID
+	DriverID       uuid.UUID
+	StartPoint     Coordinates
+	EndPoint       Coordinates
+	Price          int64
+	Status         string
+	StartedAt      time.Time
+	FinishedAt     *time.Time
+	LastPositionAt *time.Time
+}
+
+type Position struct {
+	ID          int64
+	TripID      uuid.UUID
+	Coordinates Coordinates
+	RecordedAt  time.Time
+}
+
+type PositionInput struct {
+	TripID      uuid.UUID
+	Coordinates Coordinates
+	RecordedAt  time.Time
+}
+
+type StaleCursor struct {
+	At time.Time
+	ID uuid.UUID
 }
 
 func (t *Trip) Finish(at time.Time) error {

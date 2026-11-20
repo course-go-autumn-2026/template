@@ -58,7 +58,7 @@ func setup(t *testing.T) (context.Context, *pgxpool.Pool, *repository.Repository
 	}
 	t.Cleanup(pool.Close)
 	files, err := filepath.Glob("../../../migrations/*.sql")
-	if err != nil || len(files) != 2 {
+	if err != nil || len(files) != 4 {
 		t.Fatalf("migration files=%v,error=%v", files, err)
 	}
 	for _, file := range files {
@@ -72,6 +72,120 @@ func setup(t *testing.T) (context.Context, *pgxpool.Pool, *repository.Repository
 		}
 	}
 	return ctx, pool, repository.NewRepository(pool, 5*time.Second), repository.NewHistoryRepository(pool, 5*time.Second), transaction.NewTxManager(pool, 5*time.Second)
+}
+
+func TestPositionsAndStaleTrips(t *testing.T) {
+	ctx, _, repo, _, tx := setup(t)
+	old := newTrip()
+	old.StartedAt = time.Now().Add(-10 * time.Minute).UTC().Truncate(time.Microsecond)
+	fresh := newTrip()
+	fresh.StartedAt = time.Now().UTC().Truncate(time.Microsecond)
+	completed := newTrip()
+	completed.StartedAt = old.StartedAt
+	withoutPosition := newTrip()
+	withoutPosition.StartedAt = old.StartedAt
+	for _, value := range []model.Trip{old, fresh, completed, withoutPosition} {
+		if err := repo.Create(ctx, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := repo.Finish(ctx, completed.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	oldPoint := model.PositionInput{TripID: old.ID, Coordinates: model.Coordinates{Latitude: 59.9, Longitude: 30.3}, RecordedAt: old.StartedAt.Add(2 * time.Minute)}
+	newPoint := oldPoint
+	newPoint.RecordedAt = old.StartedAt.Add(5 * time.Minute)
+	if err := tx.Do(ctx, func(txCtx context.Context) error {
+		if _, err := repo.SavePosition(txCtx, newPoint); err != nil {
+			return err
+		}
+		_, err := repo.SavePosition(txCtx, oldPoint)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := repo.Get(ctx, old.ID)
+	if err != nil || updated.LastPositionAt == nil || !updated.LastPositionAt.Equal(newPoint.RecordedAt) {
+		t.Fatalf("last position = %v, error = %v", updated.LastPositionAt, err)
+	}
+	positions, err := repo.ListPositions(ctx, old.ID)
+	if err != nil || len(positions) != 2 || !positions[0].RecordedAt.Equal(oldPoint.RecordedAt) || !positions[1].RecordedAt.Equal(newPoint.RecordedAt) {
+		t.Fatalf("positions=%v,error=%v", positions, err)
+	}
+	found, err := repo.StaleTrips(ctx, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 2 || (found[0].ID != old.ID && found[1].ID != old.ID) || (found[0].ID != withoutPosition.ID && found[1].ID != withoutPosition.ID) {
+		t.Fatalf("stale trips=%v", found)
+	}
+	page, cursor, err := repo.StaleTripsBatch(ctx, time.Minute, 1, nil)
+	if err != nil || len(page) != 1 || cursor == nil {
+		t.Fatalf("first stale batch=%v,cursor=%v,error=%v", page, cursor, err)
+	}
+	page, cursor, err = repo.StaleTripsBatch(ctx, time.Minute, 1, cursor)
+	if err != nil || len(page) != 1 || cursor == nil {
+		t.Fatalf("second stale batch=%v,cursor=%v,error=%v", page, cursor, err)
+	}
+	page, cursor, err = repo.StaleTripsBatch(ctx, time.Minute, 1, cursor)
+	if err != nil || len(page) != 0 || cursor != nil {
+		t.Fatalf("third stale batch=%v,cursor=%v,error=%v", page, cursor, err)
+	}
+}
+
+func TestPositionRollback(t *testing.T) {
+	ctx, _, repo, _, tx := setup(t)
+	fresh := newTrip()
+	if err := repo.Create(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+	rollback := errors.New("rollback")
+	freshPoint := model.PositionInput{TripID: fresh.ID, Coordinates: model.Coordinates{Latitude: 59.8, Longitude: 30.4}, RecordedAt: fresh.StartedAt}
+	if err := tx.Do(ctx, func(txCtx context.Context) error {
+		_, err := repo.SavePosition(txCtx, freshPoint)
+		if err != nil {
+			return err
+		}
+		return rollback
+	}); !errors.Is(err, rollback) {
+		t.Fatalf("rollback error=%v", err)
+	}
+	positions, err := repo.ListPositions(ctx, fresh.ID)
+	if err != nil || len(positions) != 0 {
+		t.Fatalf("rollback positions=%v,error=%v", positions, err)
+	}
+	rolledBack, err := repo.Get(ctx, fresh.ID)
+	if err != nil || rolledBack.LastPositionAt != nil {
+		t.Fatalf("rollback last_position_at=%v, error=%v", rolledBack.LastPositionAt, err)
+	}
+}
+
+func TestStaleCursorWithEqualTimestamps(t *testing.T) {
+	ctx, _, repo, _, _ := setup(t)
+	at := time.Now().Add(-time.Hour)
+	expected := make(map[uuid.UUID]struct{})
+	for range 5 {
+		value := newTrip()
+		value.StartedAt = at
+		if err := repo.Create(ctx, value); err != nil {
+			t.Fatal(err)
+		}
+		expected[value.ID] = struct{}{}
+	}
+	var cursor *model.StaleCursor
+	for _, size := range []int{2, 2, 1, 0} {
+		page, next, err := repo.StaleTripsBatch(ctx, time.Minute, 2, cursor)
+		if err != nil || len(page) != size {
+			t.Fatalf("page size=%d, expected=%d, error=%v", len(page), size, err)
+		}
+		for _, value := range page {
+			if _, ok := expected[value.ID]; !ok {
+				t.Fatalf("unexpected or repeated trip %s", value.ID)
+			}
+			delete(expected, value.ID)
+		}
+		cursor = next
+	}
 }
 
 func newTrip() model.Trip {

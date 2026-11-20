@@ -5,7 +5,7 @@ run:
 
 generate:
 	go generate ./internal/... ./cmd/...
-	go tool oapi-codegen -generate types,chi-server -include-operation-ids createTrip,getTrip,finishTrip,health,ready -package api -o api/trip-service.gen.go contracts/openapi/trip-service.openapi.yaml
+	go tool oapi-codegen -generate types,chi-server -include-operation-ids createTrip,getTrip,finishTrip,createTripPosition,listTripPositions,health,ready -package api -o api/trip-service.gen.go contracts/openapi/trip-service.openapi.yaml
 	gofmt -w api/trip-service.gen.go
 
 test:

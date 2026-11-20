@@ -19,3 +19,7 @@ type getHandler interface {
 type finishHandler interface {
 	FinishTrip(http.ResponseWriter, *http.Request, api.TripId)
 }
+type positionHandler interface {
+	CreateTripPosition(http.ResponseWriter, *http.Request, api.TripId)
+	ListTripPositions(http.ResponseWriter, *http.Request, api.TripId)
+}

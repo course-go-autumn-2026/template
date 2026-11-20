@@ -9,10 +9,13 @@ import (
 )
 
 type (
-	Trip         = trip.Trip
-	Coordinates  = trip.Coordinates
-	CreateInput  = trip.CreateInput
-	StatusChange struct {
+	Trip          = trip.Trip
+	Coordinates   = trip.Coordinates
+	Position      = trip.Position
+	StaleCursor   = trip.StaleCursor
+	PositionInput = trip.PositionInput
+	CreateInput   = trip.CreateInput
+	StatusChange  struct {
 		TripID     uuid.UUID
 		FromStatus *string
 		ToStatus   string

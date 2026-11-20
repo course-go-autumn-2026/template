@@ -17,12 +17,17 @@ type Handler struct {
 	createHandler
 	getHandler
 	finishHandler
+	positionHandler
 	db      pinger
 	timeout time.Duration
 }
 
-func New(c createHandler, g getHandler, f finishHandler, p pinger, timeout time.Duration) *Handler {
-	return &Handler{c, g, f, p, timeout}
+func New(c createHandler, g getHandler, f finishHandler, p pinger, timeout time.Duration, positions ...positionHandler) *Handler {
+	var ph positionHandler = api.Unimplemented{}
+	if len(positions) > 0 && positions[0] != nil {
+		ph = positions[0]
+	}
+	return &Handler{createHandler: c, getHandler: g, finishHandler: f, positionHandler: ph, db: p, timeout: timeout}
 }
 
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
