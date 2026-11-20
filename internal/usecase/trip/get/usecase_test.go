@@ -15,30 +15,41 @@ import (
 	"github.com/n1ckerr0r/avito-labs/internal/usecase/trip/get"
 )
 
-func TestUsecase_Execute_Found(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	id := uuid.New()
-	want := model.Trip{ID: id, Status: string(trip.StatusActive)}
-
-	repo.EXPECT().Get(gomock.Any(), id).Return(want, nil)
-
-	uc := get.New(repo, time.Second)
-	got, err := uc.Execute(context.Background(), id)
-
-	require.NoError(t, err)
-	assert.Equal(t, want, got)
-}
-
-func TestUsecase_Execute_NotFound(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	id := uuid.New()
-
-	repo.EXPECT().Get(gomock.Any(), id).Return(model.Trip{}, trip.ErrTripNotFound)
-
-	uc := get.New(repo, time.Second)
-	_, err := uc.Execute(context.Background(), id)
-
-	require.ErrorIs(t, err, trip.ErrTripNotFound)
+func TestUsecase_Execute(t *testing.T) {
+	id := uuid.MustParse("00000000-0000-4000-8000-000000000001")
+	expected := model.Trip{ID: id, UserID: uuid.New(), Price: 500, Status: string(trip.StatusActive)}
+	tests := []struct {
+		name    string
+		setup   func(*gomock.Controller) *get.Usecase
+		want    model.Trip
+		wantErr error
+	}{
+		{name: "found", setup: func(ctrl *gomock.Controller) *get.Usecase {
+			repo := NewMocktripRepository(ctrl)
+			repo.EXPECT().Get(gomock.Any(), id).Return(expected, nil)
+			return get.New(repo, time.Second)
+		}, want: expected},
+		{name: "not found", setup: func(ctrl *gomock.Controller) *get.Usecase {
+			repo := NewMocktripRepository(ctrl)
+			repo.EXPECT().Get(gomock.Any(), id).Return(model.Trip{}, trip.ErrTripNotFound)
+			return get.New(repo, time.Second)
+		}, wantErr: trip.ErrTripNotFound},
+		{name: "repository error", setup: func(ctrl *gomock.Controller) *get.Usecase {
+			repo := NewMocktripRepository(ctrl)
+			repo.EXPECT().Get(gomock.Any(), id).Return(model.Trip{}, assert.AnError)
+			return get.New(repo, time.Second)
+		}, wantErr: assert.AnError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uc := tt.setup(gomock.NewController(t))
+			got, err := uc.Execute(context.Background(), id)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

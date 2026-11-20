@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -15,162 +16,105 @@ import (
 	"github.com/n1ckerr0r/avito-labs/internal/usecase/trip/create"
 )
 
-// passthroughTx runs fn with the given ctx, same as the real transaction.Manager would.
-func passthroughTx(tx *MocktxManager) {
-	tx.EXPECT().Do(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, fn func(context.Context) error) error {
-		return fn(ctx)
-	}).AnyTimes()
-}
-
-func baseInput() create.Input {
-	return create.Input{
-		UserID:     uuid.New(),
-		DriverID:   uuid.New(),
+func TestUsecase_Execute(t *testing.T) {
+	key := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	existing := model.Trip{ID: uuid.MustParse("22222222-2222-2222-2222-222222222222"), Status: string(trip.StatusActive)}
+	hash := []byte("request-hash")
+	writeErr := errors.New("write conflict")
+	commitErr := errors.New("commit failed")
+	input := create.Input{
+		UserID:     uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+		DriverID:   uuid.MustParse("44444444-4444-4444-4444-444444444444"),
 		StartPoint: trip.Coordinates{Latitude: 55.7, Longitude: 37.6},
 		EndPoint:   trip.Coordinates{Latitude: 55.8, Longitude: 37.7},
 		Price:      500,
 	}
-}
 
-func TestUsecase_Execute_Create(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	tx := NewMocktxManager(ctrl)
-	passthroughTx(tx)
+	tests := []struct {
+		name                          string
+		withKey, replay, conflict     bool
+		createErr, completeErr, txErr error
+		wantErr                       error
+		wantCreated                   bool
+	}{
+		{name: "create", wantCreated: true},
+		{name: "create with idempotency key", withKey: true, wantCreated: true},
+		{name: "idempotent replay", withKey: true, replay: true},
+		{name: "idempotency conflict", withKey: true, replay: true, conflict: true, wantErr: trip.ErrIdempotencyConflict},
+		{name: "driver busy", createErr: trip.ErrDriverBusy, wantErr: trip.ErrDriverBusy},
+		{name: "repository error", createErr: writeErr, wantErr: writeErr},
+		{name: "complete key error", withKey: true, completeErr: writeErr, wantErr: writeErr},
+		{name: "transaction commit error", txErr: commitErr, wantErr: commitErr},
+	}
 
-	repo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().AddStatusHistory(gomock.Any(), gomock.Any(), nil, string(trip.StatusActive), gomock.Any(), gomock.Any()).Return(nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			repo := NewMocktripRepository(ctrl)
+			tx := NewMocktxManager(ctrl)
+			tx.EXPECT().Do(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, fn func(context.Context) error) error {
+				if err := fn(ctx); err != nil {
+					return err
+				}
+				return tt.txErr
+			})
 
-	uc := create.New(repo, tx)
-	result, created, err := uc.Execute(context.Background(), baseInput())
+			in := input
+			if tt.withKey {
+				in.IdempotencyKey, in.RequestHash = &key, hash
+				existingHash := hash
+				if tt.conflict {
+					existingHash = []byte("different-hash")
+				}
+				repo.EXPECT().ClaimIdempotencyKey(gomock.Any(), key, hash).Return(!tt.replay, existingHash, existing.ID, nil)
+			}
 
-	require.NoError(t, err)
-	assert.True(t, created)
-	assert.Equal(t, string(trip.StatusActive), result.Status)
-}
+			var saved model.Trip
+			if tt.replay && !tt.conflict {
+				repo.EXPECT().Get(gomock.Any(), existing.ID).Return(existing, nil)
+			} else if !tt.replay {
+				repo.EXPECT().Create(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, got model.Trip) error {
+					saved = got
+					assert.NotEqual(t, uuid.Nil, got.ID)
+					assert.Equal(t, in.UserID, got.UserID)
+					assert.Equal(t, in.DriverID, got.DriverID)
+					assert.Equal(t, model.Coordinates(in.StartPoint), got.StartPoint)
+					assert.Equal(t, model.Coordinates(in.EndPoint), got.EndPoint)
+					assert.Equal(t, in.Price, got.Price)
+					assert.Equal(t, string(trip.StatusActive), got.Status)
+					assert.False(t, got.StartedAt.IsZero())
+					assert.Nil(t, got.FinishedAt)
+					return tt.createErr
+				})
+				if tt.createErr == nil {
+					repo.EXPECT().AddStatusHistory(gomock.Any(), gomock.Any(), nil, string(trip.StatusActive), "trip created", gomock.Any()).DoAndReturn(
+						func(_ context.Context, id uuid.UUID, _ *string, _, _ string, at time.Time) error {
+							assert.Equal(t, saved.ID, id)
+							assert.Equal(t, saved.StartedAt, at)
+							return nil
+						})
+					if tt.withKey {
+						repo.EXPECT().CompleteIdempotencyKey(gomock.Any(), key, gomock.Any()).DoAndReturn(func(_ context.Context, _ uuid.UUID, id uuid.UUID) error {
+							assert.Equal(t, saved.ID, id)
+							return tt.completeErr
+						})
+					}
+				}
+			}
 
-func TestUsecase_Execute_Create_NewIdempotencyKey(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	tx := NewMocktxManager(ctrl)
-	passthroughTx(tx)
-
-	key := uuid.New()
-	hash := []byte("hash")
-
-	repo.EXPECT().ClaimIdempotencyKey(gomock.Any(), key, hash).Return(true, nil, uuid.Nil, nil)
-	repo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().AddStatusHistory(gomock.Any(), gomock.Any(), nil, string(trip.StatusActive), gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().CompleteIdempotencyKey(gomock.Any(), key, gomock.Any()).Return(nil)
-
-	in := baseInput()
-	in.IdempotencyKey = &key
-	in.RequestHash = hash
-
-	uc := create.New(repo, tx)
-	_, created, err := uc.Execute(context.Background(), in)
-
-	require.NoError(t, err)
-	assert.True(t, created)
-}
-
-func TestUsecase_Execute_CompleteIdempotencyKeyError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	tx := NewMocktxManager(ctrl)
-	passthroughTx(tx)
-
-	key := uuid.New()
-	boom := errors.New("write conflict")
-
-	repo.EXPECT().ClaimIdempotencyKey(gomock.Any(), key, gomock.Any()).Return(true, nil, uuid.Nil, nil)
-	repo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().AddStatusHistory(gomock.Any(), gomock.Any(), nil, string(trip.StatusActive), gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().CompleteIdempotencyKey(gomock.Any(), key, gomock.Any()).Return(boom)
-
-	in := baseInput()
-	in.IdempotencyKey = &key
-
-	uc := create.New(repo, tx)
-	_, created, err := uc.Execute(context.Background(), in)
-
-	require.ErrorIs(t, err, boom)
-	assert.False(t, created)
-}
-
-func TestUsecase_Execute_DriverBusy(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	tx := NewMocktxManager(ctrl)
-	passthroughTx(tx)
-
-	repo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(trip.ErrDriverBusy)
-
-	uc := create.New(repo, tx)
-	_, created, err := uc.Execute(context.Background(), baseInput())
-
-	require.ErrorIs(t, err, trip.ErrDriverBusy)
-	assert.False(t, created)
-}
-
-func TestUsecase_Execute_IdempotentReplay(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	tx := NewMocktxManager(ctrl)
-	passthroughTx(tx)
-
-	key := uuid.New()
-	existingID := uuid.New()
-	hash := []byte("same-hash")
-	existing := model.Trip{ID: existingID, Status: string(trip.StatusActive)}
-
-	repo.EXPECT().ClaimIdempotencyKey(gomock.Any(), key, hash).Return(false, hash, existingID, nil)
-	repo.EXPECT().Get(gomock.Any(), existingID).Return(existing, nil)
-
-	in := baseInput()
-	in.IdempotencyKey = &key
-	in.RequestHash = hash
-
-	uc := create.New(repo, tx)
-	result, created, err := uc.Execute(context.Background(), in)
-
-	require.NoError(t, err)
-	assert.False(t, created)
-	assert.Equal(t, existingID, result.ID)
-}
-
-func TestUsecase_Execute_IdempotencyConflict(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	tx := NewMocktxManager(ctrl)
-	passthroughTx(tx)
-
-	key := uuid.New()
-
-	repo.EXPECT().ClaimIdempotencyKey(gomock.Any(), key, []byte("hash-a")).Return(false, []byte("hash-b"), uuid.New(), nil)
-
-	in := baseInput()
-	in.IdempotencyKey = &key
-	in.RequestHash = []byte("hash-a")
-
-	uc := create.New(repo, tx)
-	_, created, err := uc.Execute(context.Background(), in)
-
-	require.ErrorIs(t, err, trip.ErrIdempotencyConflict)
-	assert.False(t, created)
-}
-
-func TestUsecase_Execute_RepositoryError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	tx := NewMocktxManager(ctrl)
-	passthroughTx(tx)
-
-	boom := errors.New("connection reset")
-	repo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(boom)
-
-	uc := create.New(repo, tx)
-	_, _, err := uc.Execute(context.Background(), baseInput())
-
-	require.ErrorIs(t, err, boom)
+			result, err := create.New(repo, tx).Execute(context.Background(), in)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.Equal(t, create.Result{}, result)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantCreated, result.Created)
+			if tt.replay {
+				assert.Equal(t, existing, result.Trip)
+			} else {
+				assert.Equal(t, saved, result.Trip)
+			}
+		})
+	}
 }

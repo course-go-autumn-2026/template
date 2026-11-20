@@ -20,6 +20,11 @@ type Input struct {
 	RequestHash          []byte
 }
 
+type Result struct {
+	Trip    model.Trip
+	Created bool
+}
+
 type Usecase struct {
 	repo tripRepository
 	tx   txManager
@@ -30,14 +35,14 @@ func New(repo tripRepository, tx txManager) *Usecase {
 }
 
 // Execute creates a trip, or returns the one created by a matching idempotency key.
-func (u *Usecase) Execute(ctx context.Context, in Input) (result model.Trip, created bool, err error) {
+func (u *Usecase) Execute(ctx context.Context, in Input) (Result, error) {
 	t, err := trip.NewTrip(uuid.New(), in.UserID, in.DriverID, in.StartPoint, in.EndPoint, in.Price, time.Now().UTC())
 	if err != nil {
-		return model.Trip{}, false, err
+		return Result{}, err
 	}
 
 	m := toModel(t)
-	result = m
+	result := Result{Trip: m}
 
 	err = u.tx.Do(ctx, func(ctx context.Context) error {
 		if in.IdempotencyKey != nil {
@@ -51,7 +56,7 @@ func (u *Usecase) Execute(ctx context.Context, in Input) (result model.Trip, cre
 					return trip.ErrIdempotencyConflict
 				}
 
-				result, err = u.repo.Get(ctx, existingTripID)
+				result.Trip, err = u.repo.Get(ctx, existingTripID)
 
 				return err
 			}
@@ -71,12 +76,16 @@ func (u *Usecase) Execute(ctx context.Context, in Input) (result model.Trip, cre
 			}
 		}
 
-		created = true
+		result.Created = true
 
 		return nil
 	})
 
-	return result, created, err
+	if err != nil {
+		return Result{}, err
+	}
+
+	return result, nil
 }
 
 func toModel(t trip.Trip) model.Trip {

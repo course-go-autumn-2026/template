@@ -15,65 +15,67 @@ import (
 	"github.com/n1ckerr0r/avito-labs/internal/usecase/trip/finish"
 )
 
-func passthroughTx(tx *MocktxManager) {
-	tx.EXPECT().Do(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, fn func(context.Context) error) error {
-		return fn(ctx)
-	}).AnyTimes()
-}
-
-func TestUsecase_Execute_Success(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	tx := NewMocktxManager(ctrl)
-	passthroughTx(tx)
-
-	id := uuid.New()
-	active := model.Trip{ID: id, Status: string(trip.StatusActive), StartedAt: time.Now().UTC()}
-
-	repo.EXPECT().GetForUpdate(gomock.Any(), id).Return(active, nil)
-	repo.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, m model.Trip) error {
-		assert.Equal(t, string(trip.StatusCompleted), m.Status)
-		assert.NotNil(t, m.FinishedAt)
-
-		return nil
-	})
-	repo.EXPECT().AddStatusHistory(gomock.Any(), id, gomock.Any(), string(trip.StatusCompleted), gomock.Any(), gomock.Any()).Return(nil)
-
-	uc := finish.New(repo, tx)
-	result, err := uc.Execute(context.Background(), id)
-
-	require.NoError(t, err)
-	assert.Equal(t, string(trip.StatusCompleted), result.Status)
-}
-
-func TestUsecase_Execute_AlreadyCompleted(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	tx := NewMocktxManager(ctrl)
-	passthroughTx(tx)
-
-	id := uuid.New()
-	completed := model.Trip{ID: id, Status: string(trip.StatusCompleted)}
-
-	repo.EXPECT().GetForUpdate(gomock.Any(), id).Return(completed, nil)
-
-	uc := finish.New(repo, tx)
-	_, err := uc.Execute(context.Background(), id)
-
-	require.ErrorIs(t, err, trip.ErrTripCompleted)
-}
-
-func TestUsecase_Execute_NotFound(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMocktripRepository(ctrl)
-	tx := NewMocktxManager(ctrl)
-	passthroughTx(tx)
-
-	id := uuid.New()
-	repo.EXPECT().GetForUpdate(gomock.Any(), id).Return(model.Trip{}, trip.ErrTripNotFound)
-
-	uc := finish.New(repo, tx)
-	_, err := uc.Execute(context.Background(), id)
-
-	require.ErrorIs(t, err, trip.ErrTripNotFound)
+func TestUsecase_Execute(t *testing.T) {
+	id := uuid.MustParse("00000000-0000-4000-8000-000000000001")
+	active := model.Trip{ID: id, UserID: uuid.New(), DriverID: uuid.New(), StartPoint: model.Coordinates{Latitude: 1, Longitude: 2}, EndPoint: model.Coordinates{Latitude: 3, Longitude: 4}, Price: 500, Status: string(trip.StatusActive), StartedAt: time.Now().UTC().Add(-time.Minute)}
+	completed := active
+	completed.Status = string(trip.StatusCompleted)
+	setup := func(current model.Trip, getErr, updateErr, historyErr error) func(*testing.T, *gomock.Controller) *finish.Usecase {
+		return func(t *testing.T, ctrl *gomock.Controller) *finish.Usecase {
+			repo := NewMocktripRepository(ctrl)
+			tx := NewMocktxManager(ctrl)
+			tx.EXPECT().Do(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) })
+			repo.EXPECT().GetForUpdate(gomock.Any(), id).Return(current, getErr)
+			if getErr == nil && current.Status == string(trip.StatusActive) {
+				var updated model.Trip
+				repo.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, got model.Trip) error {
+					require.NotNil(t, got.FinishedAt)
+					expected := current
+					expected.Status = string(trip.StatusCompleted)
+					expected.FinishedAt = got.FinishedAt
+					assert.Equal(t, expected, got)
+					assert.False(t, got.FinishedAt.Before(got.StartedAt))
+					updated = got
+					return updateErr
+				})
+				if updateErr == nil {
+					repo.EXPECT().AddStatusHistory(gomock.Any(), id, gomock.Any(), string(trip.StatusCompleted), "trip finished", gomock.Any()).DoAndReturn(func(_ context.Context, _ uuid.UUID, from *string, _ string, _ string, at time.Time) error {
+						require.NotNil(t, from)
+						assert.Equal(t, string(trip.StatusActive), *from)
+						require.NotNil(t, updated.FinishedAt)
+						assert.Equal(t, *updated.FinishedAt, at)
+						return historyErr
+					})
+				}
+			}
+			return finish.New(repo, tx)
+		}
+	}
+	tests := []struct {
+		name    string
+		setup   func(*testing.T, *gomock.Controller) *finish.Usecase
+		wantErr error
+	}{
+		{"success", setup(active, nil, nil, nil), nil},
+		{"already completed", setup(completed, nil, nil, nil), trip.ErrTripCompleted},
+		{"not found", setup(model.Trip{}, trip.ErrTripNotFound, nil, nil), trip.ErrTripNotFound},
+		{"update error", setup(active, nil, assert.AnError, nil), assert.AnError},
+		{"history error", setup(active, nil, nil, assert.AnError), assert.AnError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uc := tt.setup(t, gomock.NewController(t))
+			got, err := uc.Execute(context.Background(), id)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, got.FinishedAt)
+			expected := active
+			expected.Status = string(trip.StatusCompleted)
+			expected.FinishedAt = got.FinishedAt
+			assert.Equal(t, expected, got)
+		})
+	}
 }

@@ -4,66 +4,67 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/caarlos0/env/v11"
 )
 
 // Config contains application settings loaded from environment variables.
 type Config struct {
-	HTTPAddr                string
-	HTTPReadTimeout         time.Duration
-	HTTPReadHeaderTimeout   time.Duration
-	HTTPWriteTimeout        time.Duration
-	HTTPIdleTimeout         time.Duration
-	DatabaseURL             string
-	LogLevel                string
-	ShutdownTimeout         time.Duration
-	DatabaseMaxConns        int32
-	DatabaseMinConns        int32
-	DatabaseConnectTimeout  time.Duration
-	DatabaseQueryTimeout    time.Duration
-	DatabaseMaxConnLifetime time.Duration
-	OTELServiceName         string
-	OTELExporterEndpoint    string
-	OTELExporterProtocol    string
-	OTELResourceAttributes  string
-	OTELTracesSampler       string
+	HTTPAddr                string        `env:"HTTP_ADDR,required,notEmpty"`
+	HTTPReadTimeout         time.Duration `env:"HTTP_READ_TIMEOUT" envDefault:"5s"`
+	HTTPReadHeaderTimeout   time.Duration `env:"HTTP_READ_HEADER_TIMEOUT" envDefault:"5s"`
+	HTTPWriteTimeout        time.Duration `env:"HTTP_WRITE_TIMEOUT" envDefault:"10s"`
+	HTTPIdleTimeout         time.Duration `env:"HTTP_IDLE_TIMEOUT" envDefault:"1m"`
+	DatabaseURL             string        `env:"DATABASE_URL,required,notEmpty"`
+	LogLevel                string        `env:"LOG_LEVEL,required,notEmpty"`
+	ShutdownTimeout         time.Duration `env:"SHUTDOWN_TIMEOUT,required,notEmpty"`
+	DatabaseMaxConns        int32         `env:"DATABASE_MAX_CONNS,required,notEmpty"`
+	DatabaseMinConns        int32         `env:"DATABASE_MIN_CONNS,required,notEmpty"`
+	DatabaseConnectTimeout  time.Duration `env:"DATABASE_CONNECT_TIMEOUT,required,notEmpty"`
+	DatabaseQueryTimeout    time.Duration `env:"DATABASE_QUERY_TIMEOUT,required,notEmpty"`
+	DatabaseMaxConnLifetime time.Duration `env:"DATABASE_MAX_CONN_LIFETIME,required,notEmpty"`
+	OTELServiceName         string        `env:"OTEL_SERVICE_NAME,required,notEmpty"`
+	OTELExporterEndpoint    string        `env:"OTEL_EXPORTER_OTLP_ENDPOINT,required,notEmpty"`
+	OTELExporterProtocol    string        `env:"OTEL_EXPORTER_OTLP_PROTOCOL,required,notEmpty"`
+	OTELResourceAttributes  string        `env:"OTEL_RESOURCE_ATTRIBUTES,required,notEmpty"`
+	OTELTracesSampler       string        `env:"OTEL_TRACES_SAMPLER,required,notEmpty"`
 }
 
 // Load reads and validates the required service configuration from the environment.
 func Load() (Config, error) {
-	var (
-		cfg Config
-		err error
-	)
-
-	if cfg.HTTPAddr, err = requiredString("HTTP_ADDR"); err != nil {
-		return Config{}, err
+	// Preserve the previous behavior: ignore surrounding whitespace, and treat
+	// whitespace-only values as absent (including for optional defaults).
+	environment := make(map[string]string)
+	for _, entry := range os.Environ() {
+		name, value, _ := strings.Cut(entry, "=")
+		if value = strings.TrimSpace(value); value != "" {
+			environment[name] = value
+		}
 	}
 
-	if cfg.DatabaseURL, err = requiredString("DATABASE_URL"); err != nil {
-		return Config{}, err
+	cfg, err := env.ParseAsWithOptions[Config](env.Options{Environment: environment})
+	if err != nil {
+		return Config{}, fmt.Errorf("load environment configuration: %w", err)
 	}
 
-	if cfg.HTTPReadTimeout, err = durationOrDefault("HTTP_READ_TIMEOUT", 5*time.Second); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.HTTPReadHeaderTimeout, err = durationOrDefault("HTTP_READ_HEADER_TIMEOUT", 5*time.Second); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.HTTPWriteTimeout, err = durationOrDefault("HTTP_WRITE_TIMEOUT", 10*time.Second); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.HTTPIdleTimeout, err = durationOrDefault("HTTP_IDLE_TIMEOUT", time.Minute); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.LogLevel, err = requiredString("LOG_LEVEL"); err != nil {
-		return Config{}, err
+	for _, timeout := range []struct {
+		name  string
+		value time.Duration
+	}{
+		{"HTTP_READ_TIMEOUT", cfg.HTTPReadTimeout},
+		{"HTTP_READ_HEADER_TIMEOUT", cfg.HTTPReadHeaderTimeout},
+		{"HTTP_WRITE_TIMEOUT", cfg.HTTPWriteTimeout},
+		{"HTTP_IDLE_TIMEOUT", cfg.HTTPIdleTimeout},
+		{"SHUTDOWN_TIMEOUT", cfg.ShutdownTimeout},
+		{"DATABASE_CONNECT_TIMEOUT", cfg.DatabaseConnectTimeout},
+		{"DATABASE_QUERY_TIMEOUT", cfg.DatabaseQueryTimeout},
+		{"DATABASE_MAX_CONN_LIFETIME", cfg.DatabaseMaxConnLifetime},
+	} {
+		if timeout.value <= 0 {
+			return Config{}, fmt.Errorf("%s must be greater than zero", timeout.name)
+		}
 	}
 
 	cfg.LogLevel = strings.ToLower(cfg.LogLevel)
@@ -73,48 +74,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("LOG_LEVEL must be one of debug, info, warn, error; got %q", cfg.LogLevel)
 	}
 
-	if cfg.ShutdownTimeout, err = requiredDuration("SHUTDOWN_TIMEOUT"); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.DatabaseConnectTimeout, err = requiredDuration("DATABASE_CONNECT_TIMEOUT"); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.DatabaseQueryTimeout, err = requiredDuration("DATABASE_QUERY_TIMEOUT"); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.DatabaseMaxConnLifetime, err = requiredDuration("DATABASE_MAX_CONN_LIFETIME"); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.DatabaseMaxConns, err = requiredInt32("DATABASE_MAX_CONNS"); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.DatabaseMinConns, err = requiredInt32("DATABASE_MIN_CONNS"); err != nil {
-		return Config{}, err
-	}
-
 	if cfg.DatabaseMaxConns < 1 {
 		return Config{}, fmt.Errorf("DATABASE_MAX_CONNS must be greater than zero")
 	}
-
 	if cfg.DatabaseMinConns < 0 || cfg.DatabaseMinConns > cfg.DatabaseMaxConns {
 		return Config{}, fmt.Errorf("DATABASE_MIN_CONNS must be between zero and DATABASE_MAX_CONNS")
-	}
-
-	if cfg.OTELServiceName, err = requiredString("OTEL_SERVICE_NAME"); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.OTELExporterEndpoint, err = requiredString("OTEL_EXPORTER_OTLP_ENDPOINT"); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.OTELExporterProtocol, err = requiredString("OTEL_EXPORTER_OTLP_PROTOCOL"); err != nil {
-		return Config{}, err
 	}
 
 	switch cfg.OTELExporterProtocol {
@@ -122,15 +86,6 @@ func Load() (Config, error) {
 	default:
 		return Config{}, fmt.Errorf("OTEL_EXPORTER_OTLP_PROTOCOL must be http/protobuf or grpc; got %q", cfg.OTELExporterProtocol)
 	}
-
-	if cfg.OTELResourceAttributes, err = requiredString("OTEL_RESOURCE_ATTRIBUTES"); err != nil {
-		return Config{}, err
-	}
-
-	if cfg.OTELTracesSampler, err = requiredString("OTEL_TRACES_SAMPLER"); err != nil {
-		return Config{}, err
-	}
-
 	switch cfg.OTELTracesSampler {
 	case "always_on", "always_off", "parentbased_always_on", "parentbased_always_off":
 	default:
@@ -138,53 +93,4 @@ func Load() (Config, error) {
 	}
 
 	return cfg, nil
-}
-
-func requiredString(name string) (string, error) {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return "", fmt.Errorf("required environment variable %s is not set", name)
-	}
-
-	return value, nil
-}
-
-func requiredDuration(name string) (time.Duration, error) {
-	value, err := requiredString(name)
-	if err != nil {
-		return 0, err
-	}
-
-	duration, err := time.ParseDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("parse %s: %w", name, err)
-	}
-
-	if duration <= 0 {
-		return 0, fmt.Errorf("%s must be greater than zero", name)
-	}
-
-	return duration, nil
-}
-
-func durationOrDefault(name string, fallback time.Duration) (time.Duration, error) {
-	if strings.TrimSpace(os.Getenv(name)) == "" {
-		return fallback, nil
-	}
-
-	return requiredDuration(name)
-}
-
-func requiredInt32(name string) (int32, error) {
-	value, err := requiredString(name)
-	if err != nil {
-		return 0, err
-	}
-
-	parsed, err := strconv.ParseInt(value, 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("parse %s as integer: %w", name, err)
-	}
-
-	return int32(parsed), nil
 }

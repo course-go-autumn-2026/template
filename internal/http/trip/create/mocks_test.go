@@ -13,7 +13,6 @@ import (
 	context "context"
 	reflect "reflect"
 
-	model "github.com/n1ckerr0r/avito-labs/internal/model"
 	create "github.com/n1ckerr0r/avito-labs/internal/usecase/trip/create"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -43,13 +42,12 @@ func (m *MocktripCreator) EXPECT() *MocktripCreatorMockRecorder {
 }
 
 // Execute mocks base method.
-func (m *MocktripCreator) Execute(ctx context.Context, in create.Input) (model.Trip, bool, error) {
+func (m *MocktripCreator) Execute(ctx context.Context, in create.Input) (create.Result, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Execute", ctx, in)
-	ret0, _ := ret[0].(model.Trip)
-	ret1, _ := ret[1].(bool)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret0, _ := ret[0].(create.Result)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Execute indicates an expected call of Execute.

@@ -1,0 +1,440 @@
+[
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 33,
+    "column": 14,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "==",
+    "replacement": "!=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 29,
+    "column": 12,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "==",
+    "replacement": "!=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 37,
+    "column": 59,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 41,
+    "column": 55,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 45,
+    "column": 11,
+    "type": "CONDITIONALS_BOUNDARY",
+    "original": "<",
+    "replacement": "<=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 45,
+    "column": 11,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "<",
+    "replacement": ">=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 62,
+    "column": 16,
+    "type": "CONDITIONALS_BOUNDARY",
+    "original": "<",
+    "replacement": "<=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 62,
+    "column": 22,
+    "type": "INVERT_LOGICAL",
+    "original": "||",
+    "replacement": "&&",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 62,
+    "column": 18,
+    "type": "INVERT_NEGATIVES",
+    "original": "-",
+    "replacement": "+",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 62,
+    "column": 16,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "<",
+    "replacement": ">=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 62,
+    "column": 18,
+    "type": "ARITHMETIC_BASE",
+    "original": "-",
+    "replacement": "+",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 62,
+    "column": 36,
+    "type": "CONDITIONALS_BOUNDARY",
+    "original": ">",
+    "replacement": ">=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 63,
+    "column": 40,
+    "type": "ARITHMETIC_BASE",
+    "original": "+",
+    "replacement": "-",
+    "status": "compile_error",
+    "output": "# github.com/n1ckerr0r/avito-labs/internal/domain/trip\ninternal/domain/trip/trip.go:63:34: invalid operation: operator - not defined on field (variable of type string)"
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 62,
+    "column": 36,
+    "type": "CONDITIONALS_NEGATION",
+    "original": ">",
+    "replacement": "<=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 66,
+    "column": 24,
+    "type": "INVERT_LOGICAL",
+    "original": "||",
+    "replacement": "&&",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 66,
+    "column": 17,
+    "type": "CONDITIONALS_BOUNDARY",
+    "original": "<",
+    "replacement": "<=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 66,
+    "column": 17,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "<",
+    "replacement": ">=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 66,
+    "column": 19,
+    "type": "INVERT_NEGATIVES",
+    "original": "-",
+    "replacement": "+",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 66,
+    "column": 19,
+    "type": "ARITHMETIC_BASE",
+    "original": "-",
+    "replacement": "+",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 66,
+    "column": 39,
+    "type": "CONDITIONALS_BOUNDARY",
+    "original": ">",
+    "replacement": ">=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 67,
+    "column": 40,
+    "type": "ARITHMETIC_BASE",
+    "original": "+",
+    "replacement": "-",
+    "status": "compile_error",
+    "output": "# github.com/n1ckerr0r/avito-labs/internal/domain/trip\ninternal/domain/trip/trip.go:67:34: invalid operation: operator - not defined on field (variable of type string)"
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 66,
+    "column": 39,
+    "type": "CONDITIONALS_NEGATION",
+    "original": ">",
+    "replacement": "<=",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestNewTrip"
+    ]
+  },
+  {
+    "package": "internal/domain/trip",
+    "file": "trip.go",
+    "line": 75,
+    "column": 14,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestTrip_Finish"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/create",
+    "file": "usecase.go",
+    "line": 40,
+    "column": 9,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/create",
+    "file": "usecase.go",
+    "line": 48,
+    "column": 24,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/create",
+    "file": "usecase.go",
+    "line": 50,
+    "column": 11,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/create",
+    "file": "usecase.go",
+    "line": 65,
+    "column": 40,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/create",
+    "file": "usecase.go",
+    "line": 69,
+    "column": 114,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/create",
+    "file": "usecase.go",
+    "line": 73,
+    "column": 24,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/create",
+    "file": "usecase.go",
+    "line": 84,
+    "column": 9,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/create",
+    "file": "usecase.go",
+    "line": 74,
+    "column": 80,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/finish",
+    "file": "usecase.go",
+    "line": 27,
+    "column": 10,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/finish",
+    "file": "usecase.go",
+    "line": 32,
+    "column": 45,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  },
+  {
+    "package": "internal/usecase/trip/finish",
+    "file": "usecase.go",
+    "line": 38,
+    "column": 45,
+    "type": "CONDITIONALS_NEGATION",
+    "original": "!=",
+    "replacement": "==",
+    "status": "test_failed",
+    "failed_tests": [
+      "TestUsecase_Execute"
+    ]
+  }
+]

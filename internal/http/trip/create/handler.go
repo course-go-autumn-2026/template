@@ -26,7 +26,7 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request, params api.Crea
 		return
 	}
 
-	trip, created, err := h.usecase.Execute(r.Context(), toInput(body, params.IdempotencyKey, requestHash))
+	result, err := h.usecase.Execute(r.Context(), toInput(body, params.IdempotencyKey, requestHash))
 	if err != nil {
 		status, problem := domainerror.Problem(err)
 		httputil.WriteProblem(w, r, status, problem)
@@ -34,14 +34,14 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request, params api.Crea
 		return
 	}
 
-	if created {
+	if result.Created {
 		h.metrics.IncCreated(r.Context())
-		h.logger.InfoContext(r.Context(), "trip created", "trip_id", trip.ID)
-		w.Header().Set("Location", "/api/v1/trips/"+trip.ID.String())
-		httputil.WriteJSON(w, http.StatusCreated, httputil.ToAPI(trip))
+		h.logger.InfoContext(r.Context(), "trip created", "trip_id", result.Trip.ID)
+		w.Header().Set("Location", "/api/v1/trips/"+result.Trip.ID.String())
+		httputil.WriteJSON(w, http.StatusCreated, httputil.ToAPI(result.Trip))
 
 		return
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, httputil.ToAPI(trip))
+	httputil.WriteJSON(w, http.StatusOK, httputil.ToAPI(result.Trip))
 }

@@ -3,6 +3,7 @@ package domainerror
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 
 	trip "github.com/n1ckerr0r/avito-labs/internal/domain/trip"
@@ -15,19 +16,19 @@ func Problem(err error) (int, api.Problem) {
 
 	switch {
 	case errors.Is(err, trip.ErrTripNotFound):
-		return problem(404, "trip_not_found", "Trip not found", "Trip not found")
+		return problem(http.StatusNotFound, "trip_not_found", "Trip not found", "Trip not found")
 	case errors.Is(err, trip.ErrTripCompleted):
-		return problem(409, "trip_completed", "Trip completed", "Trip is already completed")
+		return problem(http.StatusConflict, "trip_completed", "Trip completed", "Trip is already completed")
 	case errors.Is(err, trip.ErrDriverBusy):
-		return problem(409, "driver_busy", "Driver busy", "Driver already has an active trip")
+		return problem(http.StatusConflict, "driver_busy", "Driver busy", "Driver already has an active trip")
 	case errors.Is(err, trip.ErrConflict):
-		return problem(409, "conflict", "Conflict", "Trip conflicts with existing data")
+		return problem(http.StatusConflict, "conflict", "Conflict", "Trip conflicts with existing data")
 	case errors.Is(err, trip.ErrIdempotencyConflict):
-		return problem(409, "idempotency_conflict", "Idempotency conflict", "Idempotency key was used with a different request")
+		return problem(http.StatusConflict, "idempotency_conflict", "Idempotency conflict", "Idempotency key was used with a different request")
 	case errors.As(err, &validationErr):
-		return problem(400, "invalid_request", "Invalid request", validationErr.Error())
+		return problem(http.StatusBadRequest, "invalid_request", "Invalid request", validationErr.Error())
 	default:
-		return problem(500, "internal_error", "Internal server error", "An unexpected error occurred")
+		return problem(http.StatusInternalServerError, "internal_error", "Internal server error", "An unexpected error occurred")
 	}
 }
 

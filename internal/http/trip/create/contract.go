@@ -4,13 +4,12 @@ package create
 import (
 	"context"
 
-	"github.com/n1ckerr0r/avito-labs/internal/model"
 	usecase "github.com/n1ckerr0r/avito-labs/internal/usecase/trip/create"
 )
 
 type (
 	tripCreator interface {
-		Execute(ctx context.Context, in usecase.Input) (result model.Trip, created bool, err error)
+		Execute(ctx context.Context, in usecase.Input) (usecase.Result, error)
 	}
 
 	metrics interface {
